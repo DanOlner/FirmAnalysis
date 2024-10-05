@@ -4,6 +4,25 @@ library(sf)
 library(parallel)
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 sectorpairs_distancezscores <- function(famedata,sectortype,sectorname1,sectorname2, permutenumber = 1000){
   
   sectortype <- enquo(sector_name)

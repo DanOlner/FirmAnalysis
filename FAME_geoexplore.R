@@ -2,6 +2,7 @@
 #Fame South Yorkshire businesses
 library(tidyverse)
 library(sf)
+library(dbmss)
 library(tmap)
 library(lubridate)
 library(pryr)
@@ -14,7 +15,7 @@ fame.geo <- readRDS('localdata/fame_sy_processed_geo.rds')
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#TESTING MORAN'S I FOR SECTOR SPATIAL DEPENDENCE DETECTION----
+#TESTING DISTANCE METRICS FOR SECTOR SPATIAL DEPENDENCE DETECTION----
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 #Doing a single run before repeating for all 5 digits sector pairs (which is going to be... 662^2 = 438244 pairs, hmmmmm!)
@@ -178,6 +179,7 @@ ggplot(both, aes(x = vals, fill = which, colour = which)) +
 
 
 
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #DISTANCE MATRIX COMPARISON FOR ALL SECTOR PAIRS----
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -193,16 +195,158 @@ ggplot(both, aes(x = vals, fill = which, colour = which)) +
 
 
 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#TESTING LOCAL SAMPLING OF SECTOR PAIRS AND COMPARING TO SAME PAIR RANDOM DISTRIBUTION----
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#Testing this approach:
+# 1. Pick n neighbouring firms from a pool of two sectors.
+# 2. For the null, pick the same number of firms randomly from across the region of interest.
+#This "assumes that, if there were no spatial clustering or co-location patterns, the local pool would reflect the overall regional sectoral mix" - 
+#get the probability of sector x from that and then repeat multiple times to get a spread of probabilities. That can be used as the distribution for step 
+# 3. Compare where the probability of firms from step 1 fits on the null distribution from step 2, effectively a p value.
+
+#Again, test with two sectors
+sector_x <- fame.geo %>% filter(grepl('Manufacture of other general-purpose machinery',SIC_3DIGIT_NAME))
+# sector_y <- fame.geo %>% filter(grepl('Manufacture of basic iron and steel',SIC_3DIGIT_NAME))
+sector_y <- fame.geo %>% filter(grepl('information',SIC_3DIGIT_NAME))#a bunch of information related sectors, in fact...
+
+#Can use this for easy K nearest neighbours
+#Order should match row order in the dfs above, so we can extract firm info
+dist_matrix <- st_distance(sector_x, sector_y)
+
+#Start with 20 nearest neigbours
+#Our null will be sampling from the same two sectors randomly
+#20 at a time
+#And keeping the proportion sector split
+#The mean is just going to be the proportion count of both
+#We're after the spread from doing this
 
 
 
 
+#~~~~~~~~~~~~~~~~~~~~~~~~~
+#TESTING BDMSS PACKAGE----
+#~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#https://ericmarcon.github.io/dbmss/
+#Vignette: https://ericmarcon.github.io/dbmss/articles/dbmss.html
+#reference: https://ericmarcon.github.io/dbmss/articles/reference.html
+
+#With measures from two key papers:
+#Duranton, G., Overman, H.G., 2005. Testing for Localization Using Micro-Geographic Data. Review of Economic Studies 72, 1077–1106. https://doi.org/10.1111/0034-6527.00362
+#Marcon, E., Puech, F., 2010. Measures of the geographic concentration of industries: improving distance-based methods. Journal of Economic Geography 10, 745–762. https://doi.org/10.1093/jeg/lbp056
+
+#That are both doing exactly the two-category point pattern analysis I want to do
+#With weights too so e.g. we can include employee number 
+#Though I'd like to understand what role that's playing - want to be able to say "how much more likely cluster due to larger firms?
+#Tho easy test there would be dividing into two firm sizes and comparing
+
+
+#1. Create a wmppp object with Columns named "X", "Y", "PointType", "PointWeight"
+#So let's pull out two sectors and do that
+# sectorx = "282 : Manufacture of other general-purpose machinery"
+sectorx = "261 : Manufacture of electronic components and boards"
+# sectory = "241 : Manufacture of basic iron and steel and of ferro-alloys"
+sectory = "263 : Manufacture of communication equipment"  
+
+#2 digits
+unique(fame.geo$SIC_2DIGIT_NAME)
+
+sectorx = "24 : Manufacture of basic metals"
+sectory = "25 : Manufacture of fabricated metal products, except machinery and equipment"
+
+# sectorx = "61 : Telecommunications"
+sectorx = "62 : Computer programming, consultancy and related activities"
+sectory = "63 : Information service activities"
+
+#Sections
+unique(fame.geo$SIC_SECTION_NAME)
+
+sectorx = "Manufacturing"
+sectory = "Information and communication"
+
+df <- rbind(
+  fame.geo %>% filter(SIC_SECTION_NAME==sectorx),
+  fame.geo %>% filter(SIC_SECTION_NAME==sectory)
+) %>% 
+  filter(!is.na(employees)) %>% 
+  cbind(st_coordinates(.)) %>% 
+  st_set_geometry(NULL) %>% 
+  select(
+    PointType = SIC_SECTION_NAME,
+    PointWeight = employees,
+    X,Y
+  )
+
+#point pattern object
+#Can supply 'window' of shape of SY but let's come back to that
+pp <- wmppp(df)
+summary(pp)
+
+#Recreating the two-tree example from here:
+#https://ericmarcon.github.io/dbmss/articles/reference.html
+
+
+#With two sectors instead...
+autoplot(
+  pp,
+  labelSize = expression("employees"), 
+  labelColor = "Sector"
+)
 
 
 
+#Marcon et al M
+#From the paper p.751:
+#"The meaning of the co-location M functions is thus simple: they test whether the relative density of employees from one
+#sector around establishments of another sector is on average greater or lesser than in the whole area."
+#Which would work to detect clustering, up to a point (greater no of employees = higher clustering chance)
+
+# "The value of Equation (2) shows whether the relative density of plants S2 located
+# around those of sector S1 is greater (MS1 ,S2 ðrÞ > 1) or lesser (MS1 ,S2 ðrÞ < 1) than in the
+# entire area A."
+
+#Note, it's not symmeterical, which I would have thought it would be...
+#But no, it comparing to whole area?
+
+#Test with even weights
+pp$marks$PointWeight <- 1
+
+x <- Sys.time()
+
+Envelope <- MEnvelope(
+  pp, 
+  r = seq(0, 4000, 50),#r between 0 and 2000 metres with 100 metre steps 
+  NumberOfSimulations = 1000,
+  Alpha = 0.05, 
+  ReferenceType = sectorx, 
+  NeighborType = sectory, #"equal to the reference type by default to caculate univariate M"
+  SimulationType = "RandomLabeling", 
+  Global = TRUE
+)
+
+Sys.time() -x
+
+# autoplot(Envelope, main = "", ylim = c(0, 20))
+autoplot(Envelope, main = "")
 
 
 
+#Duranton Overman K (oh I think only for one sector...)
+Envelope <- KEnvelope(
+  pp, 
+  r = seq(0, 4000, 50),#r between 0 and 2000 metres with 100 metre steps 
+  NumberOfSimulations = 1000,
+  Alpha = 0.05, 
+  ReferenceType = sectorx, 
+  NeighborType = sectory, 
+  SimulationType = "RandomLabeling", 
+  Global = TRUE
+)
+
+
+autoplot(Envelope, main = "", xlim = c(0,1000))
 
 
 
