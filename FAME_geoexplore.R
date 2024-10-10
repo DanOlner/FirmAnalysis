@@ -86,13 +86,15 @@ hist(dist_matrix, breaks= 30)
 
 #Can repeat that multiple times to get plenty of values for a stable distribution...
 repeatrandomfirms <- function(){
-  
+
   sector_x_randomfirms <- fame.geo[sample(nrow(fame.geo),nrow(sector_x)),]
   sector_y_randomfirms <- fame.geo[sample(nrow(fame.geo),nrow(sector_y)),]
-  
+
   return(st_distance(sector_x_randomfirms, sector_y_randomfirms))
-  
+
 }
+
+
 
 # Run the function 5 times and store the matrices
 #Takes about 1000 to get something close to stability
@@ -221,6 +223,8 @@ dist_matrix <- st_distance(sector_x, sector_y)
 #And keeping the proportion sector split
 #The mean is just going to be the proportion count of both
 #We're after the spread from doing this
+
+
 
 
 

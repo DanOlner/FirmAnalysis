@@ -372,6 +372,55 @@ ggplot(
 
 
 #~~~~~~~~~~~~~~~~~
+#SOME BASIC QUESTIONS----
+#~~~~~~~~~~~~~~~~~
+
+#For firms we have emlployment numbers for, what % of firms have 50% of employees?
+table(is.na(fame.geo$employees))
+
+fame.emp <- fame.geo %>% filter(!is.na(employees)) %>% st_set_geometry(NULL)
+
+#Order by employee number, smallest to largest
+#Cumulative count
+#Find cutoff of 50%
+fame.emp <- fame.emp %>% 
+  arrange(employees) %>% 
+  mutate(cumul_employeecount = cumsum(employees))
+
+selectedrow <- which.min(abs(fame.emp$cumul_employeecount - sum(fame.emp$employees)/2))
+
+#Meaning that 328 businesses out of 33747 have 50% of employees
+#(And note I think this dataset is missing the universities currently)
+nrow(fame.emp) - selectedrow
+
+#That's this % of businesses (in this DF) ... a bit less than 1%
+((nrow(fame.emp) - selectedrow)/nrow(fame.emp)) * 100
+
+#Which we can test... tick
+sum(fame.emp$employees[1:33419])
+sum(fame.emp$employees[33420:nrow(fame.emp)])
+
+#plot the cumul of employees...
+plot(fame.emp$cumul_employeecount)
+
+
+#But trying to understand what's going on with employee counts... urgh
+#E.g.
+#https://dunamishv.co.uk/about/who-we-are/
+#DUMANIS GROUP LIMITED has one employee
+#DUMANIS INFRASTRUCTURE SERVICES LIMITED has 35, which is the right number judging by the website
+#But the website's different for the firm with larger numbers
+#This crops up a lot
+#Firm count numbers are not a great guide to anything...?
+
+
+
+#How many firms in each of the 5 digit categories / how many if firms with employee count?
+table(fame.geo$SIC_5DIGIT_NAME) %>% View
+
+
+
+#~~~~~~~~~~~~~~~~~
 #Random things----
 #~~~~~~~~~~~~~~~~~
 
