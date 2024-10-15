@@ -5,6 +5,8 @@ library(tmap)
 library(lubridate)
 library(pryr)
 library(plotly)
+library(plotme)
+
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Get postcode location lookup----
@@ -214,9 +216,29 @@ tm_shape(sy) +
 tm_shape(fame.geo[sample(nrow(fame.geo),1000),]) +
   tm_dots()
 
-#NOTE: MERGING SIC LOOKUP IN IS BREAKING SOMETHING, DON'T KNOW WHY
+
+#Some sectors...
+tmap_mode('view')
+
+#
+#Arts entertainment and recreation doesn't get any more granular beyond 2 digit
+fame.geo$SIC_2DIGIT_NAME[grepl('entertainment',fame.geo$SIC_2DIGIT_NAME,ignore.case=T)] %>% unique
+fame.geo$SIC_3DIGIT_NAME[grepl('entertainment',fame.geo$SIC_3DIGIT_NAME,ignore.case=T)] %>% unique
+
+#Performing arts...
+fame.geo$SIC_5DIGIT_NAME[grepl('performing',fame.geo$SIC_5DIGIT_NAME,ignore.case=T)] %>% unique
+
+#Get all 5 digit from 3 digit "entertainment" down
+fame.geo$SIC_5DIGIT_NAME[grepl('entertainment',fame.geo$SIC_3DIGIT_NAME,ignore.case=T)] %>% unique
 
 
+tm_shape(sy) +
+  tm_borders() +
+  tm_shape(fame.geo %>% filter(grepl('entertainment',SIC_3DIGIT_NAME,ignore.case=T))) +
+  tm_dots()
+
+#View em
+fame.geo %>% filter(grepl('entertainment',SIC_3DIGIT_NAME,ignore.case=T)) %>% View
 
 
 
@@ -414,11 +436,435 @@ plot(fame.emp$cumul_employeecount)
 #Firm count numbers are not a great guide to anything...?
 
 
+#For those with employment numbers
+#What proportion of firms are just single employee?
+table(fame.emp$employees == 1)
+
+#Counts for different bands? Cf. ONS data on this!
+table(fame.emp$employees[fame.emp$employees < 50]) %>% plot
+
+#Deciles? Hmm nope, too many 1s, obv!
+# fame.emp <- fame.emp %>%
+#   mutate(
+#     employeecountdeciles = as.numeric(cut_number(employees, 10))
+#   )
+
+
+
+
+
 
 #How many firms in each of the 5 digit categories / how many if firms with employee count?
 table(fame.geo$SIC_5DIGIT_NAME) %>% View
 
+#Visualise nesting of SICs
+#Count firms first (with employee counts? Let's compare)
+firmcountSIC <- fame.geo %>% 
+  st_set_geometry(NULL) %>% 
+  group_by(SIC_5DIGIT_NAME) %>% 
+  summarise(
+    count = n(),
+    SIC_2DIGIT_CODE = max(SIC_2DIGIT_CODE)
+    ) 
 
+
+#UTF8 error, try this
+#https://github.com/r-spatial/mapview/issues/194#issuecomment-435455450
+firmcountSIC <- firmcountSIC %>% mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)})
+
+firmcountSIC <- firmcountSIC %>% 
+  mutate(SIC_5DIGIT_CODE = substr(SIC_5DIGIT_NAME,1,5))
+
+
+#Sunburst awkward parent child rel
+parent_data <- firmcountSIC %>%
+  filter(!is.na(SIC_2DIGIT_CODE)) %>% 
+  group_by(SIC_2DIGIT_CODE) %>%
+  summarise(count = sum(count)) %>%
+  mutate(SIC_5DIGIT_CODE = SIC_2DIGIT_CODE, SIC_2DIGIT_CODE = "")  # Set parent to empty for top-level
+
+# Combine parent and child data into one frame
+sunburst_data <- bind_rows(firmcountSIC, parent_data)
+
+plot_ly(
+  sunburst_data,
+  labels = ~SIC_5DIGIT_CODE,
+  parents = ~SIC_2DIGIT_CODE,
+  values = ~count,
+  type = 'sunburst',
+  branchvalues = 'total'
+) %>%
+  layout(title = "Sunburst Plot of Industrial Categories")
+
+
+
+
+#Let's see if this works - helper for easily converting dataframe to sunburst/treemap friendly hierarchy
+#https://github.com/yogevherz/plotme
+library(plotme)
+
+#Success!
+fame.geo %>%
+  st_set_geometry(NULL) %>%
+  filter(!is.na(SIC_SECTION_CODE)) %>% 
+  mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)}) %>% 
+  mutate(SIC_5DIGIT_CODE = substr(SIC_5DIGIT_NAME,1,5)) %>% 
+  count(SIC_SECTION_CODE,SIC_3DIGIT_CODE,SIC_5DIGIT_CODE) %>% 
+  count_to_sunburst()
+
+#Will have to abbreviate names, but what happens if try to use?
+fame.geo %>%
+  st_set_geometry(NULL) %>%
+  filter(!is.na(SIC_SECTION_NAME), employees > 500) %>% 
+  mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)}) %>% 
+  mutate(SIC_5DIGIT_CODE = substr(SIC_5DIGIT_NAME,1,5)) %>% 
+  count(SIC_SECTION_NAME,SIC_3DIGIT_NAME,SIC_5DIGIT_NAME) %>% 
+  count_to_sunburst(sort_by_n = T)
+
+
+#Vesion that counts employees
+#Check firm count logic, translate to employee count for each of those
+fame.geo %>%
+  st_set_geometry(NULL) %>%
+  count(SIC_SECTION_NAME,SIC_3DIGIT_NAME,SIC_5DIGIT_NAME) %>% 
+  View
+
+#Employee count version will just be 
+#This isn't working - it's counting sublayers based on row count, not the actual sum totals
+#(inner and middle layer don't change counts when employee number changed)
+#UPDATE: yes, think probably it is working... it's just changes are minimal
+#E.g. construction is top if just counting firms with any number of employees
+fame.geo %>%
+  st_set_geometry(NULL) %>%
+  filter(employees > 1000) %>% 
+  # filter(!is.na(employees)) %>% 
+  mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)}) %>% 
+  group_by(SIC_5DIGIT_NAME) %>% 
+  summarise(
+    n = sum(employees),
+    SIC_3DIGIT_NAME = max(SIC_3DIGIT_NAME),SIC_SECTION_NAME = max(SIC_SECTION_NAME)
+    ) %>% 
+  ungroup() %>% 
+  select(c(4,3,1,2)) %>% #need cols ordering correctly
+  # View
+  count_to_sunburst(sort_by_n = T)
+
+
+#Oh actually, in theory it already has a weight function for that in count. Does it work?
+#Same problem - inner layer counts don't change regardless of changing employee filter
+fame.geo %>%
+  st_set_geometry(NULL) %>%
+  filter(!is.na(SIC_SECTION_NAME), employees > 9) %>% 
+  mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)}) %>% 
+  mutate(SIC_5DIGIT_CODE = substr(SIC_5DIGIT_NAME,1,5)) %>% 
+  count(SIC_SECTION_NAME,SIC_3DIGIT_NAME,SIC_5DIGIT_NAME, wt = employees) %>% 
+  count_to_sunburst(sort_by_n = T)
+
+#How many firms is that, can see plz?
+fame.geo %>%
+  st_set_geometry(NULL) %>%
+  filter(!is.na(SIC_SECTION_NAME), employees > 1000) %>% 
+  mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)}) %>% 
+  mutate(SIC_5DIGIT_CODE = substr(SIC_5DIGIT_NAME,1,5)) %>% 
+  count(SIC_SECTION_NAME,SIC_3DIGIT_NAME,SIC_5DIGIT_NAME, wt = employees) %>% 
+  View
+
+
+#Actually, would be nice to see how SIC section composition changes as employee number goes up
+#Looks quite stable-ish
+#And probably more informative
+
+#What I'm after here:
+#For a series of employee count bins (deciles not doable cos of spread, but let's look)
+#Get the proportion of employment by sector
+#Err... though don't we have that better from ONS data?
+#Probably, but comparison could be useful
+#And can do more granular here
+
+
+
+#~~~~~~~~~~~~~~~~~
+#Sunburst plot testing----
+#~~~~~~~~~~~~~~~~~
+
+#It's a pain to figure out the value hierarchy
+#The plotme plugin above doesn't seem to get it right
+
+#So - work out exactly what's going on with it (that the documentation utterly fails to do)
+#So we can make a proper one
+
+#With some small sample data
+fame.s <- fame.geo %>% 
+  st_set_geometry(NULL) %>% 
+  select(employees,contains('_NAME')) %>% 
+  filter(!is.na(employees),!is.na(SIC_SECTION_NAME)) %>% 
+  mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)})#needed cos formating breaks sunburst plot
+
+#Pick some random sectors
+fame.s <- fame.s %>% 
+  filter(grepl('manuf|educ|constru',SIC_SECTION_NAME,ignore.case = T))
+
+
+
+#TESTING WITH BASIC EXAMPLE
+#So that's a basic count
+#Let's see about transforming
+
+#Test just two layers first
+#labels are ALL labels regardless of position; labels shouldn't be duplicated (they won't be summed)
+#Parents are the parents of labels; blank text indicates root categories at the centre
+twolayer <- data.frame(
+  labels = c('manuf','blue steel','green steel','advanced','ict','games programming','admin programming','telecoms'),
+  parents = c('','manuf','manuf','manuf','','ict','ict','ict'),
+  n = c(45,10,15,20,61,6,30,25)
+)
+
+  
+#then we define labels and those labels' parents?
+#plot_ly(twolayer, labels = ~labels, parents = ~parents, values =~n, type = 'sunburst')
+plot_ly(twolayer, labels = ~labels, parents = ~parents, values =~n, type = 'sunburst', branchvalues = 'total')
+
+
+
+#So how to add third layer?
+#Looking at structure of example from R plotly
+#Ah OK, so that example is using IDs to unique-ify e.g. football in different places, where the label 'football' is repeated
+d <- data.frame(
+  ids = c(
+        "North America", "Europe", "Australia", "North America - Football", "Soccer",
+        "North America - Rugby", "Europe - Football", "Rugby",
+        "Europe - American Football","Australia - Football", "Association",
+        "Australian Rules", "Autstralia - American Football", "Australia - Rugby",
+        "Rugby League", "Rugby Union"
+      ),
+  labels = c(
+        "North<br>America", "Europe", "Australia", "Football", "Soccer", "Rugby",
+        "Football", "Rugby", "American<br>Football", "Football", "Association",
+        "Australian<br>Rules", "American<br>Football", "Rugby", "Rugby<br>League",
+        "Rugby<br>Union"
+      ),
+  parents = c(
+        "", "", "", "North America", "North America", "North America", "Europe",
+        "Europe", "Europe","Australia", "Australia - Football", "Australia - Football",
+        "Australia - Football", "Australia - Football", "Australia - Rugby",
+        "Australia - Rugby"
+    
+  ),
+  stringsAsFactors = FALSE
+)
+
+
+#So returning to the three layers, with no repeated labels (or shouldn't be..)
+#Two root nodes: manuf and ict
+#labels should include those, and also if we want a middle layer, those too. Let's test...
+#Parent: Normal steel >> blue and green, advanced steel >> space steel
+#Parent: programming >> the two types of programming, other ict >> telecoms
+threelayer <- data.frame(
+  labels = c('manuf','blue steel','green steel','space steel','normal steel','advanced steel',   'ict','games programming','admin programming','telecoms','programming','other ict'),
+  parents = c('','normal steel','normal steel','advanced steel','manuf','manuf',    '','programming','programming','other ict','ict','ict'),
+  n = c(45,10,15,20,25,20,   61,6,30,25,36,25)
+)
+
+plot_ly(threelayer, labels = ~labels, parents = ~parents, values =~n, type = 'sunburst', branchvalues = 'total')
+
+#OK! Think I've got that.
+#The next question becomes - how to recreate that structure from a straightfoward count dataframe?
+#Note, count can be weighted by e.g. employees, so we can get the right numbers from that (I think)
+#("computes sum(wt) for each group")
+
+
+
+
+#So let's look at the values we get, to try and work out why the plotme function is failing
+#Shortened column list but all data
+#Include an employee count filter per firm to test, it should now change root layer sizes
+fame.s <- fame.geo %>% 
+  st_set_geometry(NULL) %>% 
+  select(employees,contains('_NAME')) %>% 
+  filter(!is.na(employees),!is.na(SIC_SECTION_NAME)) %>% 
+  filter(employees > 0) %>%
+  mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)})#needed cos formating breaks sunburst plot
+
+
+
+#Then need to work out rest
+fame.count <- fame.s %>% 
+  count(SIC_5DIGIT_NAME,SIC_2DIGIT_NAME,SIC_SECTION_NAME, wt = employees)
+
+#Now -
+#Each unique SIC text value here needs its own unique entry in the 'labels' column
+#The parent-child relationships are then entirely present in these columns
+#Just need to work out how to format them into those two labels and parents columns
+#And sum any values correctly
+
+#Let's do it bit by bit for this example before generalising
+#This is all the labels
+#Do section name first - those are all the roots and have no parents, so we can just repeat a blank or NA for those in the parent vector
+#Do each sublayer in order in sequence next
+#So the second lot of vector values will be 2 digit SIC names, and we can match with SECTION parents, etc...
+#Order alphabetically so we can guarantee the same order when counting
+labels <- c (
+  unique(fame.count$SIC_SECTION_NAME)[order(unique(fame.count$SIC_SECTION_NAME))],
+  unique(fame.count$SIC_2DIGIT_NAME)[order(unique(fame.count$SIC_2DIGIT_NAME))],
+  unique(fame.count$SIC_5DIGIT_NAME[order(unique(fame.count$SIC_5DIGIT_NAME))])
+)
+
+#Make each parent list in chunks
+#Sections won't have parents, they're roots, so leave blank
+roots = rep('',length(unique(fame.count$SIC_SECTION_NAME)))
+
+#Section values will be summed employee values (ordered correctly)
+rootsvalues = fame.count %>% group_by(SIC_SECTION_NAME) %>% summarise(n = sum(n)) %>% arrange(SIC_SECTION_NAME) %>% pull(n)
+
+
+
+#2 digits' parents will be all be matching SIC section names
+#Get distinct, pull matching SIC sections, use those
+twodigit_parentnames <- fame.count %>% distinct(SIC_2DIGIT_NAME, .keep_all = T) %>% arrange(SIC_2DIGIT_NAME) %>% pull(SIC_SECTION_NAME)
+
+#get their employee values too
+twodigitvalues = fame.count %>% group_by(SIC_2DIGIT_NAME) %>% summarise(n = sum(n)) %>% arrange(SIC_2DIGIT_NAME) %>% pull(n)
+
+#Check that looks right... tick
+data.frame(
+  twodigit = unique(fame.count$SIC_2DIGIT_NAME)[order(unique(fame.count$SIC_2DIGIT_NAME))],
+  twodigit_parentnames,
+  twodigitvalues
+) %>% View
+
+
+#then the outer branch of the hierarchy for 5 digit
+#Find their 2 digit parents in the same way
+fivedigit_parentnames <- fame.count %>% distinct(SIC_5DIGIT_NAME, .keep_all = T) %>% arrange(SIC_5DIGIT_NAME) %>% pull(SIC_2DIGIT_NAME)
+
+#And values we already have, just get right order
+fivedigitvalues <- fame.count %>% arrange(SIC_5DIGIT_NAME) %>% pull(n)
+
+#Check... tick!
+data.frame(
+  fivedigit = unique(fame.count$SIC_5DIGIT_NAME)[order(unique(fame.count$SIC_5DIGIT_NAME))],
+  fivedigit_parentnames,
+  fivedigitvalues
+) %>% View
+
+
+
+#All pieces ready, assemble into parent and values
+parents = c(roots,twodigit_parentnames,fivedigit_parentnames)
+
+values = c(rootsvalues,twodigitvalues,fivedigitvalues)
+
+
+
+#In theory, could put that directly in now? YEP!
+plot_ly(labels = labels, parents = parents, values = values, type = 'sunburst', branchvalues = 'total')
+
+
+
+
+
+
+
+#Cumulative plot for key sectors... gini plot should do it no?
+#Arrange data by firm size (employees) in descending order
+firm_data <- fame.geo %>%
+  st_set_geometry(NULL) %>% 
+  filter(SIC_SECTION_NAME == 'Manufacturing',!is.na(employees)) %>% 
+  arrange(desc(employees)) %>% 
+  select(employees)
+
+#Calculate cumulative employee count
+firm_data <- firm_data %>%
+  mutate(
+    cumulative_employees = cumsum(employees),
+    cumulative_employees_percent = (cumulative_employees / sum(employees)) * 100
+    )
+
+#Create the cumulative function plot
+ggplot(firm_data, aes(x = employees, y = cumulative_employees_percent)) +
+  geom_step(direction = "hv") + # step plot to represent cumulative function
+  labs(
+    title = "Cumulative Employee Count by Firm Size",
+    x = "Firm Size (Number of Employees)",
+    y = "Cumulative Employee Count"
+  )
+
+
+#Repeat for all sections
+firm_data <- fame.geo %>%
+  st_set_geometry(NULL) %>% 
+  select(SIC_SECTION_NAME,employees) %>% 
+  filter(!is.na(employees)) %>% 
+  group_by(SIC_SECTION_NAME) %>% 
+  arrange(desc(employees)) %>% 
+  mutate(
+    cumulative_employees = cumsum(employees),
+    cumulative_employees_percent = (cumulative_employees / sum(employees)) * 100
+  )
+
+#Keep largest sections
+#One-step approach combining everything
+top_sectors <- firm_data %>%
+  group_by(SIC_SECTION_NAME) %>%
+  summarise(total_employees = sum(employees, na.rm = TRUE)) %>%
+  arrange(desc(total_employees)) %>%
+  slice_head(n = 8) %>% 
+  pull(SIC_SECTION_NAME)
+  
+  #Way to get df in one pipeline
+  # slice_head(n = 5) %>%
+  # inner_join(firm_data, by = "SIC_SECTION_NAME") # Keep only firms in the top 5 sectors
+
+
+# p <- ggplot(
+ggplot(
+  firm_data %>% filter(SIC_SECTION_NAME %in% top_sectors), 
+  aes(x = employees, y = cumulative_employees_percent, colour = SIC_SECTION_NAME)
+  ) +
+  geom_step(direction = "hv") + # step plot to represent cumulative function
+  # geom_point(shape = 18, size = 1) + # step plot to represent cumulative function
+  labs(
+    title = "Cumulative Employee Percent by Firm Size",
+    x = "Firm Size (to the right, firms with x number of employees or higher)",
+    y = "Cumulative Employee Percent in Sector"
+  ) +
+  scale_colour_brewer(palette = 'Paired') +
+  # coord_cartesian(xlim = c(0,1000)) +
+  # coord_flip(xlim = c(0,1000))
+  coord_flip()
+  # scale_x_log10()
+  
+plotly(p, tooltip = c('SIC_SECTION_NAME','cumulative_employees_percent'))
+
+
+#Label by 1 to 10, 11 to 100 etc
+firm_data <- firm_data %>% 
+  mutate(
+    firmsizegroup = case_when(
+      employees > 0 & employees < 10 ~ '1 to 9',
+      employees > 9 & employees < 100 ~ '10 to 99',
+      employees > 99 & employees < 1000 ~ '100 to 999',
+      employees > 999 & employees < 10000 ~ '1000 to 9999',
+    )
+  )
+
+#BLEURGH!!!
+ggplot(
+  firm_data %>% filter(SIC_SECTION_NAME %in% top_sectors), 
+  aes(x = employees, y = cumulative_employees_percent, colour = SIC_SECTION_NAME)
+) +
+  geom_step(direction = "hv") + # step plot to represent cumulative function
+  # geom_point(shape = 18, size = 1) + # step plot to represent cumulative function
+  labs(
+    title = "Cumulative Employee Percent by Firm Size",
+    x = "Firm Size (to the right, firms with x number of employees or higher)",
+    y = "Cumulative Employee Percent in Sector"
+  ) +
+  scale_colour_brewer(palette = 'Paired') +
+  # coord_cartesian(xlim = c(0,1000)) +
+  # coord_flip(xlim = c(0,1000))
+  coord_flip() +
+  facet_wrap(~firmsizegroup, scales = 'free_y', ncol = 1)
 
 #~~~~~~~~~~~~~~~~~
 #Random things----
