@@ -2,23 +2,104 @@
 library(tidyverse)
 library(sf)
 library(parallel)
+library(httr)
+library(jsonlite)
+
+
+#OSM postcode fetch
+get_fulladdress_from_osm <- function(business_name, place_name, quotebusiness = F) {
+  
+  base_url <- "https://nominatim.openstreetmap.org/search"  
+  
+  # if(quotebusiness){
+    # query <- paste('"',business_name,'"', city_name, sep = ", ")
+  # } else {
+  query <- paste(business_name, place_name, sep = ", ")
+  # }
+  
+  #Limit to 1, get top one
+  response <- GET(base_url, query = list(q = query, format = "json", limit = 1))
+  
+  #return the full result. If length is zero, can check later
+  fromJSON(content(response, as = "text"))
+  
+}
+
+
+
+#Function to get the UK postcode using Google Places API
+get_uk_postcode_google_places_new <- function(business_name, place_name, api_key) {
+  
+  base_url <- "https://places.googleapis.com/v1/places:searchText"
+  
+  # Create the request body (the JSON object with the textQuery)
+  body <- list(
+    textQuery = paste(business_name, place_name,"UK",sep=",") 
+  )
+  
+  # Set the headers including the API key and Content-Type
+  headers <- add_headers(
+    "Content-Type" = "application/json",
+    "X-Goog-Api-Key" = api_key,
+    "X-Goog-FieldMask" = "places.addressComponents"
+    # "X-Goog-FieldMask" = "places.displayName,places.formattedAddress"
+  )
+  
+  # Send the POST request
+  response <- POST(base_url, 
+                   body = body, 
+                   encode = "json",  # Ensures the body is sent as JSON
+                   headers)
+  
+  # Check the status and content of the response
+  status_code(response)
+  # content(response, "text")  # Prints the content of the response
+  
+  #Parsed as list, no json messin
+  result <- content(response, "parsed")  # Prints the content of the response
+  
+  #Postcode doesn't stay in the same list index
+  # result$places[[1]]$addressComponents[[8]]$longText
+  
+  #One easy way rather than dig through list and backtrack:
+  #convert to data frame, find right column, postcode is previous column
+  df <- result %>% data.frame()
+  
+  which(names(df) == 'places.addressComponents..postal_code.')
+  
+  #previous column should contain postcode = return this
+  df[,which(names(df) == 'places.addressComponents..postal_code.')-1]
+  
+}
 
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
+#Via https://stackoverflow.com/questions/51828712/r-regular-expression-for-extracting-uk-postcode-from-an-address-is-not-ordered
+address_to_postcode <- function(addresses) {
+  
+  # 1. Convert addresses to upper case
+  addresses = toupper(addresses)
+  
+  # 2. Regular expression for UK postcodes:
+  pcd_regex = "[Gg][Ii][Rr] 0[Aa]{2})|((([A-Za-z][0-9]{1,2})|(([A-Za-z][A-Ha-hJ-Yj-y][0-9]{1,2})|(([A-Za-z][0-9][A-Za-z])|([A-Za-z][A-Ha-hJ-Yj-y][0-9]?[A-Za-z])))) {0,1}[0-9][A-Za-z]{2})"
+  
+  # 3. Check if a postcode is present in each address or not (return TRUE if present, else FALSE)
+  present <- grepl(pcd_regex, addresses)
+  
+  # 4. Extract postcodes matching the regular expression for a valid UK postcode
+  postcodes <- regmatches(addresses, regexpr(pcd_regex, addresses))
+  
+  # 5. Return NA where an address does not contain a (valid format) UK postcode
+  postcodes_out <- list()
+  postcodes_out[present] <- postcodes
+  postcodes_out[!present] <- NA
+  
+  # 6. Return the results in a vector (should be same length as input vector)
+  return(do.call(c, postcodes_out))
+}
 
 
 

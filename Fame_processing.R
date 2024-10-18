@@ -156,6 +156,12 @@ table(fame$postcode_nospaces[!fame$postcode_nospaces %in% pc$postcode_nospaces],
 #View(fame %>% filter(is.na(postcode_nospaces)))
 nopc <- fame %>% filter(is.na(postcode_nospaces))
 
+#How many of those have employee counts? Most of them
+table(is.na(nopc$employees))
+
+#How many are small numbers?
+table(nopc$employees)
+
 range(nopc$employees, na.rm = T)
 
 #It's a lot of sometimes very large employees and/or third sector orgs
@@ -554,11 +560,16 @@ fame.geo %>%
 #Same problem - inner layer counts don't change regardless of changing employee filter
 fame.geo %>%
   st_set_geometry(NULL) %>%
-  filter(!is.na(SIC_SECTION_NAME), employees > 9) %>% 
+  filter(!is.na(SIC_SECTION_NAME), employees > 0) %>% 
   mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)}) %>% 
   mutate(SIC_5DIGIT_CODE = substr(SIC_5DIGIT_NAME,1,5)) %>% 
-  count(SIC_SECTION_NAME,SIC_3DIGIT_NAME,SIC_5DIGIT_NAME, wt = employees) %>% 
+  # count(SIC_SECTION_NAME,SIC_3DIGIT_NAME,SIC_5DIGIT_NAME, wt = employees) %>% 
+  count(SIC_SECTION_NAME,SIC_3DIGIT_NAME,SIC_5DIGIT_NAME) %>% 
   count_to_sunburst(sort_by_n = T)
+
+
+
+
 
 #How many firms is that, can see plz?
 fame.geo %>%
@@ -830,8 +841,8 @@ ggplot(
   ) +
   scale_colour_brewer(palette = 'Paired') +
   # coord_cartesian(xlim = c(0,1000)) +
-  # coord_flip(xlim = c(0,1000))
-  coord_flip()
+  coord_flip(xlim = c(0,1000))
+  # coord_flip()
   # scale_x_log10()
   
 plotly(p, tooltip = c('SIC_SECTION_NAME','cumulative_employees_percent'))
