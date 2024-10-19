@@ -73,7 +73,6 @@ api_key <- scan('localdata/googleapikey.txt', character(), quote = "")
 #Repeat for google places api
 postcodes_n_addresses <- list()
 
-
 #Note: all uni of sheffield results are same firm
 #But let's store employee number as another key for disambiguation just in case
 # for(name in nopc_employeecount$`Company name`[1:3]){
@@ -112,6 +111,9 @@ saveRDS(postcodes_n_addresses,'localdata/googleplacesnew_postcodefixing.rds')
 
 postcodes_n_addresses.df <- bind_rows(postcodes_n_addresses)
 
+saveRDS(postcodes_n_addresses.df,'localdata/googleplacesnew_postcodefixing_dataframe.rds')
 
+#How'd that do? Pretty good
+table(is.na(postcodes_n_addresses.df$postcode))
 
 
