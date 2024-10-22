@@ -114,6 +114,6 @@ postcodes_n_addresses.df <- bind_rows(postcodes_n_addresses)
 saveRDS(postcodes_n_addresses.df,'localdata/googleplacesnew_postcodefixing_dataframe.rds')
 
 #How'd that do? Pretty good
-table(is.na(postcodes_n_addresses.df$postcode))
+table(!is.na(postcodes_n_addresses.df$postcode))
 
 

@@ -841,11 +841,11 @@ ggplot(
   ) +
   scale_colour_brewer(palette = 'Paired') +
   # coord_cartesian(xlim = c(0,1000)) +
-  coord_flip(xlim = c(0,1000))
+  coord_flip(xlim = c(0,1500))
   # coord_flip()
   # scale_x_log10()
   
-plotly(p, tooltip = c('SIC_SECTION_NAME','cumulative_employees_percent'))
+# plotly(p, tooltip = c('SIC_SECTION_NAME','cumulative_employees_percent'))
 
 
 #Label by 1 to 10, 11 to 100 etc
