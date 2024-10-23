@@ -3,6 +3,7 @@
 #https://www.ons.gov.uk/businessindustryandtrade/business/activitysizeandlocation/datasets/businessdemographyreferencetable
 
 library(tidyverse)
+library(zoo)
 # library(stringdist)
 
 #USE ENTERPRISE BIRTHS TO FIGURE OUT HOW TO HARMONISE LOCAL AUTHORITY GEOGRAPHIES FROM 2017 TO 2022----
@@ -358,7 +359,6 @@ death_sheet_list <- purrr::map(list_of_sheets, harmonise_localauthorities)
 
 #FINAL FIRM DEMOGRAPHY PROCESSING, SAVE TO PUBLIC DATA FOLDER----
 
-
 #All the above into a function
 # debugonce(get_all_firm_demography_data)
 births <- get_all_firm_demography_data('Births Of New Enterprises')
@@ -367,6 +367,11 @@ active <- get_all_firm_demography_data('Count Of Active Enterprises For')
 active10plus <- get_all_firm_demography_data('10\\+ Employees')
 highgrowth <- get_all_firm_demography_data('Count Of High Growth Enterprises')
 
+#While we're here, do SY summed active values look about right?
+#Little bit low compared to FAME but right ballpark 
+active %>% 
+  filter(grepl('sheffield|barnsl|donca|rother',region,ignore.case = T)) %>% 
+  summarise(across(`2017`:`2022`, sum))
 
 #Save a couple of versions
 saveRDS(
@@ -380,6 +385,231 @@ write_csv(deaths, 'data/deaths_firmdemography_to_2022.csv')
 write_csv(active, 'data/active_firmdemography_to_2022.csv')
 write_csv(active10plus, 'data/active10plus_firmdemography_to_2022.csv')
 write_csv(highgrowth, 'data/highgrowth_firmdemography_to_2022.csv')
+
+
+
+#LONG VERSIONS - year in long form
+births <- get_all_firm_demography_data('Births Of New Enterprises', returnlong = T)
+deaths <- get_all_firm_demography_data('Deaths Of Enterprises', returnlong = T)
+active <- get_all_firm_demography_data('Count Of Active Enterprises For', returnlong = T)
+active10plus <- get_all_firm_demography_data('10\\+ Employees', returnlong = T)
+highgrowth <- get_all_firm_demography_data('Count Of High Growth Enterprises', returnlong = T)
+
+
+#Save a couple of versions
+saveRDS(
+  list(births = births, deaths = deaths, active = active, active10plus = active10plus, highgrowth = highgrowth),
+  'data/firm_demography_dataframe_list2022_LONG.rds'
+  )
+
+#Save also as separate CSVs for others
+write_csv(births, 'data/births_firmdemography_to_2022_LONG.csv')
+write_csv(deaths, 'data/deaths_firmdemography_to_2022_LONG.csv')
+write_csv(active, 'data/active_firmdemography_to_2022_LONG.csv')
+write_csv(active10plus, 'data/active10plus_firmdemography_to_2022_LONG.csv')
+write_csv(highgrowth, 'data/highgrowth_firmdemography_to_2022_LONG.csv')
+
+
+
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#EXAMINE FIRM DEMOG DATA----
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Flag MCAs and core cities----
+
+#Work with all of em in the one list
+d <- readRDS('data/firm_demography_dataframe_list2022_LONG.rds')
+
+#local authority 2024 to MCA lookup
+#https://geoportal.statistics.gov.uk/datasets/64c740b84a02419fb7a561555337d931_0/explore
+#REMEMBER THESE ARE ONLY ENGLAND
+mcalookup <- read_csv('data/Local_Authority_District_to_Combined_Authority_(May_2024)_Lookup_in_EN.csv') 
+
+#One non match
+table(mcalookup$LAD24CD %in% d$births$code)
+mcalookup %>% filter(!mcalookup$LAD24CD  %in% d$births$code)
+
+#It's North Yorkshire.
+#From same amazingly useful wikipedia page
+#A new unitary authority, North Yorkshire Council, replaced North Yorkshire County Council and the non-metropolitan districts of 
+#Craven, Hambleton, Harrogate, Richmondshire, Ryedale, Scarborough and Selby on 1 April 2023. 
+
+#We want to keep the YNY MCA so want to use this most recent data
+#But need to code these manually to be up to date
+
+#So match which ones we can then do YNY manually
+d <- d %>% purrr::map(left_join, mcalookup %>% select(LAD24CD,CAUTH24CD,CAUTH24NM), by = c('code' = 'LAD24CD'))
+
+
+
+#then fix YNY issue
+#Check match... tick
+table(c('Craven', 'Hambleton', 'Harrogate', 'Richmondshire', 'Ryedale', 'Scarborough', 'Selby') %in% d$births$region)
+
+#function to keep tidy
+mutate_yny <- function(df){
+  
+  df %>% mutate(
+    CAUTH24CD = case_when(
+      region %in% c('Craven', 'Hambleton', 'Harrogate', 'Richmondshire', 'Ryedale', 'Scarborough', 'Selby') ~ 'E47000012',
+      .default = CAUTH24CD
+      )
+    ,
+    CAUTH24NM = case_when(
+      region %in% c('Craven', 'Hambleton', 'Harrogate', 'Richmondshire', 'Ryedale', 'Scarborough', 'Selby') ~ 'York and North Yorkshire',
+      .default = CAUTH24NM
+    )
+  )
+  
+}
+
+d <- d %>% purrr::map(mutate_yny)
+
+
+
+#CORE CITIES
+#Check match in LAs... tick
+d$births$region[grepl(x = d$births$region, pattern = 'sheffield|Belfast|Birmingham|Bristol|Cardiff|Glasgow|Leeds|Liverpool|Manchester|Newcastle upon|Nottingham', ignore.case = T)] %>% unique
+
+#Label all the demog LAs
+d <- d %>% purrr::map(
+  ~ dplyr::mutate(., corecity = ifelse(
+    grepl('sheffield|Belfast|Birmingham|Bristol|Cardiff|Glasgow|Leeds|Liverpool|Manchester|Newcastle upon|Nottingham', region, ignore.case = T),
+    'Core city','Other'
+  ))
+)
+
+
+
+## Examine high growth firm raw numbers----
+
+#Just to start digging into this. Knowing actual numbers useful
+#Compare just MCAs and core cities to start with
+mcas.hg <- d$highgrowth %>%
+  filter(!is.na(CAUTH24NM)) %>% 
+  group_by(CAUTH24NM,year) %>%
+  summarise(count = sum(count)) %>% 
+  rename(MCA = CAUTH24NM)
+
+
+ggplot(mcas.hg, aes(x = year, y = count, colour = fct_reorder(MCA,-count))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired')
+
+
+
+#Let's do same for core cities... each is already separate LA, don't need to summarise
+core.hg <- d$highgrowth %>%
+  filter(corecity == 'Core city') %>% 
+  rename(MCA = CAUTH24NM)
+
+ggplot(core.hg, aes(x = year, y = count, colour = fct_reorder(region,-count))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired')
+
+
+#OK, now to repeat that as PROPORTION OF ACTIVE FIRMS
+#Note, high growth only calculated for firms of 10+ employees
+#So use that as denom
+
+#Merge as new column to make division easy
+hg_propof10plusfirms <- d$highgrowth %>% 
+  rename(count_highgrowth = count) %>% 
+  left_join(
+    d$active10plus %>% select(region,year,count_active10plus = count), by = c('region','year')
+  ) 
+
+#Repeat plots
+#Have to get percent here so it's after summing counts
+mcas.hg.prop <- hg_propof10plusfirms %>%
+  filter(!is.na(CAUTH24NM)) %>% 
+  group_by(CAUTH24NM,year) %>%
+  summarise(
+    count_highgrowth = sum(count_highgrowth),
+    count_active10plus = sum(count_active10plus)
+    ) %>% 
+  rename(MCA = CAUTH24NM) %>% 
+  mutate(highgrowthfirms_aspercentof_firms10plusemployees = (count_highgrowth/count_active10plus) * 100 )
+
+
+ggplot(mcas.hg.prop, aes(x = year, y = highgrowthfirms_aspercentof_firms10plusemployees, colour = fct_reorder(MCA,-highgrowthfirms_aspercentof_firms10plusemployees))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired')
+
+
+
+#Would be good to see a plot of those against each other over time - is it active firm numbers increasing or high growth firms dropping?
+#Quick and dirty version
+mcas.hg.prop <- mcas.hg.prop %>% 
+  group_by(MCA) %>% 
+  mutate(
+    count_highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
+    count_active10plus_movingav = rollapply(count_active10plus, 3, mean, align = 'center', fill = NA)
+    ) %>% 
+  ungroup()
+
+#Use moving av centrepoints
+ggplot(
+  mcas.hg.prop %>% filter(year %in% c(2018,2021)),
+  aes(x = count_highgrowth_movingav, y = count_active10plus_movingav, shape = factor(year), group = MCA, colour = fct_reorder(MCA,-count_active10plus_movingav))
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_y_log10() +
+  scale_x_log10() 
+
+
+
+
+#Let's do same for core cities... each is already separate LA, don't need to summarise
+#THIS LOOKS TOO VOLATILE, PROB NOT ENOUGH DATA
+#Use moving av again
+core.hg.prop <- hg_propof10plusfirms %>%
+  filter(corecity == 'Core city') %>% 
+  mutate(highgrowthfirms_aspercentof_firms10plusemployees = (count_highgrowth/count_active10plus) * 100 ) %>% 
+  group_by(region) %>% 
+  mutate(
+    count_highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
+    count_active10plus_movingav = rollapply(count_active10plus, 3, mean, align = 'center', fill = NA),
+    highgrowthfirms_aspercentof_firms10plusemployees_movingav = rollapply(highgrowthfirms_aspercentof_firms10plusemployees, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+  
+#Volatile, use moving av
+ggplot(core.hg.prop, aes(x = year, y = highgrowthfirms_aspercentof_firms10plusemployees_movingav, colour = fct_reorder(region,-highgrowthfirms_aspercentof_firms10plusemployees_movingav))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021)) +
+  labs(colour = 'core city')
+
+
+#repeat check of which of active vs high growth is changing
+#Use moving av centrepoints
+ggplot(
+  core.hg.prop %>% filter(year %in% c(2018,2021)),
+  aes(x = count_highgrowth_movingav, y = count_active10plus_movingav, shape = factor(year), group = region, colour = fct_reorder(region,-count_active10plus_movingav))
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_y_log10() +
+  scale_x_log10() 
+
+
+
+
+
+
+
+
+
 
 
 

@@ -243,7 +243,7 @@ firm_read <- function(sheetname){
 
 
 #Get all harmonised firm data from demography excel, all in one function
-get_all_firm_demography_data <- function(sheetsearchtext){
+get_all_firm_demography_data <- function(sheetsearchtext, returnlong = F){
   
   #Get sheet names
   #Remove ones we don't want (sic2007 case varies, obv!)
@@ -282,11 +282,28 @@ get_all_firm_demography_data <- function(sheetsearchtext){
   combined <- purrr::reduce(death_sheet_list, left_join, by = 'region')
   
   #Add LA code back in, return df
-  combined %>% 
+  combined <- combined %>% 
     left_join(
       la22 %>% select(code = LAD22CD, region = LAD22NM)
     ) %>% 
     relocate(code)
+  
+  if(returnlong){
+  
+  #Make long, years in one column, make them numeric
+    combined <- combined %>% 
+    pivot_longer(
+      cols = contains('20'), names_to = 'year', values_to = 'count'
+    ) %>% 
+      mutate(year = as.numeric(year))
+    
+    return(combined)
+    
+  } else {
+    
+    return(combined)
+    
+  }
 
 }
 
