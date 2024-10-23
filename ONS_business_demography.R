@@ -604,6 +604,130 @@ ggplot(
 
 
 
+#Firm efficiency and turnover----
+
+#equivalent to migration efficiency
+#See “variouschecks.xlsx” in localdata folder for a reminder: -1 = “all deaths no births”, 1 is all births no deaths, 0 is balance
+#And also https://journals.sagepub.com/doi/full/10.1177/23998083231173696#bibr8-23998083231173696
+#"We use two flow measures: migration efficiency and turnover (see e.g. Dennett and Stillwell, 2008). 
+#Migration efficiency measures the polarity of flows into and out of a zone. 
+#Minus 1 indicates all flows were out, none came in; +1 indicates all flows were in, none left. 
+#Zero indicates a balance of inward and outward flows. 
+#Migration efficiency provides a measure of polarity but not scale; 
+#so we use turnover for the latter: the sum of inward and outward flows divided by total zone population."
+
+#Combine births and deaths
+#And also active firms for turnover
+bd <- d$births %>% 
+  rename(count_births = count) %>% 
+  left_join(
+    d$deaths %>% select(region,year,count_deaths = count), by = c('region','year')
+  ) %>% 
+  left_join(
+    d$active %>% select(region,year,count_active = count), by = c('region','year')
+  ) %>%
+  relocate(count_deaths, .after = count_births) %>% 
+  relocate(count_active, .after = count_deaths)
+
+
+#Aggregate to MCAs and find firm growth efficiency for those summed numbers
+#Then there's turnover, which can measure scale where efficiency can't
+#To give a sense of the level of creative destruction
+bd.mca <- bd %>%
+  filter(!is.na(CAUTH24NM)) %>% 
+  group_by(CAUTH24NM,year) %>%
+  summarise(
+    count_births = sum(count_births),
+    count_deaths = sum(count_deaths),
+    count_active = sum(count_active)
+    ) %>% 
+  rename(MCA = CAUTH24NM) %>% 
+  mutate(
+    firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+    turnover = (count_births + count_deaths)/(count_active)
+  ) %>% 
+  group_by(MCA) %>% 
+  mutate(
+    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+    turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+  
+
+
+ggplot(bd.mca, aes(x = year, y = firmefficency, colour = fct_reorder(MCA,-firmefficency))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  geom_hline(yintercept = 0)
+
+
+#Hmm. Try smoothed version. Shouldn't matter whether smoothing underlying values or this result, I don't think
+#Though will doublecheck
+bd.mca <- bd.mca %>% 
+  group_by(MCA) %>% 
+  mutate(
+    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+
+ggplot(bd.mca, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(MCA,-firmefficency_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(xlim = c(2018,2021))
+
+
+#And for core cities?
+bd.core <- bd %>%
+  filter(corecity == 'Core city') %>% 
+  mutate(
+    firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+    turnover = (count_births + count_deaths)/(count_active)
+  ) %>% 
+  group_by(region) %>% 
+  mutate(
+    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+
+ggplot(bd.core, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(region,-firmefficency_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(xlim = c(2018,2021)) +
+  labs(colour = 'Core city')
+
+
+
+#Plot turnover values for MCAs and core cities too
+ggplot(bd.mca, aes(x = year, y = turnover, colour = fct_reorder(MCA,-turnover))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') 
+
+ggplot(bd.mca, aes(x = year, y = turnover_movingav, colour = fct_reorder(MCA,-turnover_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021))
+
+
+
+#Next up: I think seeing births and deaths each separately as a proportion of active firms would be good next
+#Can plot each of those on two axes and look at smoothed change betw two timepoints again
+#(Cos turnover masks which of those is higher)
+
+#Note for report: could really do with some better ways to examine 10+ employee size firms
+#Given what proportion are <10 employees or a single employee
+
+
+
+
+
+
 
 
 
