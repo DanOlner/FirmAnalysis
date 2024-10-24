@@ -1,9 +1,9 @@
 #ONS business demography dataset processing / analysis
 #Excel data grabbed from here, stored in localdata (gitignored folder)
 #https://www.ons.gov.uk/businessindustryandtrade/business/activitysizeandlocation/datasets/businessdemographyreferencetable
-
 library(tidyverse)
 library(zoo)
+library(nomisr)
 # library(stringdist)
 
 #USE ENTERPRISE BIRTHS TO FIGURE OUT HOW TO HARMONISE LOCAL AUTHORITY GEOGRAPHIES FROM 2017 TO 2022----
@@ -644,12 +644,16 @@ bd.mca <- bd %>%
   rename(MCA = CAUTH24NM) %>% 
   mutate(
     firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
-    turnover = (count_births + count_deaths)/(count_active)
+    turnover = (count_births + count_deaths)/(count_active),
+    births_over_active_percent = ((count_births)/(count_active))*100,
+    deaths_over_active_percent = ((count_deaths)/(count_active))*100
   ) %>% 
   group_by(MCA) %>% 
   mutate(
     firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
-    turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA)
+    turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
+    births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
+    deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
   ) %>% 
   ungroup()
   
@@ -662,15 +666,8 @@ ggplot(bd.mca, aes(x = year, y = firmefficency, colour = fct_reorder(MCA,-firmef
   geom_hline(yintercept = 0)
 
 
-#Hmm. Try smoothed version. Shouldn't matter whether smoothing underlying values or this result, I don't think
+#Try smoothed version. Shouldn't matter whether smoothing underlying values or this result, I don't think
 #Though will doublecheck
-bd.mca <- bd.mca %>% 
-  group_by(MCA) %>% 
-  mutate(
-    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA)
-  ) %>% 
-  ungroup()
-
 ggplot(bd.mca, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(MCA,-firmefficency_movingav))) +
   geom_line() +
   geom_point(size = 2) +
@@ -678,17 +675,55 @@ ggplot(bd.mca, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(MC
   geom_hline(yintercept = 0) +
   coord_cartesian(xlim = c(2018,2021))
 
+#Plot turnover values for MCAs 
+ggplot(bd.mca, aes(x = year, y = turnover, colour = fct_reorder(MCA,-turnover))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') 
+
+ggplot(bd.mca, aes(x = year, y = turnover_movingav, colour = fct_reorder(MCA,-turnover_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021))
+
+
+#Births and deaths as prop of active plotted separately
+#Time plot of smoothed
+ggplot(
+  bd.mca %>% filter(year %in% c(2018,2021)),
+  aes(x = births_over_active_percent_movingav, y = deaths_over_active_percent_movingav, shape = factor(year), group = MCA, colour = fct_reorder(MCA,-turnover_movingav))
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_y_log10() +
+  scale_x_log10() +
+  labs(colour = 'MCAs', shape = 'Year (3 yr av)')
+
+
+
+
+
+
 
 #And for core cities?
 bd.core <- bd %>%
-  filter(corecity == 'Core city') %>% 
+  # filter(corecity == 'Core city') %>% 
+  filter(corecity == 'Core city' | grepl('barns|doncaster|rotherh',region,ignore.case=T)) %>% #version that includes other places in SY
   mutate(
     firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
-    turnover = (count_births + count_deaths)/(count_active)
+    turnover = (count_births + count_deaths)/(count_active),
+    births_over_active_percent = ((count_births)/(count_active))*100,
+    deaths_over_active_percent = ((count_deaths)/(count_active))*100
   ) %>% 
   group_by(region) %>% 
   mutate(
-    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA)
+    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+    turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
+    births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
+    deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
   ) %>% 
   ungroup()
 
@@ -702,33 +737,108 @@ ggplot(bd.core, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(r
 
 
 
-#Plot turnover values for MCAs and core cities too
-ggplot(bd.mca, aes(x = year, y = turnover, colour = fct_reorder(MCA,-turnover))) +
+#Two var plot
+ggplot(
+  bd.core %>% filter(year %in% c(2018,2021), region!='Belfast'),
+  aes(x = births_over_active_percent_movingav, y = deaths_over_active_percent_movingav, shape = factor(year), group = region, colour = fct_reorder(region,-turnover_movingav))
+) +
   geom_line() +
-  geom_point(size = 2) +
-  scale_color_brewer(palette = 'Paired') 
-
-ggplot(bd.mca, aes(x = year, y = turnover_movingav, colour = fct_reorder(MCA,-turnover_movingav))) +
-  geom_line() +
-  geom_point(size = 2) +
+  geom_point(size = 3) +
   scale_color_brewer(palette = 'Paired') +
-  coord_cartesian(xlim = c(2018,2021))
+  geom_abline(slope = 1, intercept = 0) +
+  scale_y_log10() +
+  scale_x_log10() +
+  coord_fixed() +
+  labs(colour = 'MCAs', shape = 'Year (3 yr av)')
+
+
+#Version with arrows via geom_segment?
+#Just two timepoints
+bd.core.wide <- bd.core %>% 
+  filter(year %in% c(2018,2021)) %>% 
+  select(region,year,firmefficency:deaths_over_active_percent_movingav) %>% 
+  pivot_wider(names_from = year, values_from = firmefficency:deaths_over_active_percent_movingav)
+
+ggplot(
+  bd.core.wide %>% filter(region!='Belfast'),
+  aes(colour = fct_reorder(region,-turnover_movingav_2021))
+) +
+  # geom_line() +
+  # geom_point(size = 3) +
+  geom_segment(aes(x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018 ,
+                                     xend = births_over_active_percent_movingav_2021, yend = deaths_over_active_percent_movingav_2021),
+               arrow = arrow(length = unit(0.5, "cm")),
+               size = 1) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_y_log10() +
+  scale_x_log10() +
+  coord_fixed() +
+  labs(colour = 'MCAs')
 
 
 
-#Next up: I think seeing births and deaths each separately as a proportion of active firms would be good next
-#Can plot each of those on two axes and look at smoothed change betw two timepoints again
-#(Cos turnover masks which of those is higher)
+
+
 
 #Note for report: could really do with some better ways to examine 10+ employee size firms
 #Given what proportion are <10 employees or a single employee
 
 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#Get population denominator(s)----
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#Can we use 16+ in employment as denom?
+#Already got most of the way there to get this but we'll need a different geography
+#See https://github.com/DanOlner/ukcompare/blob/0a07b463cf96cbbf61920b10914d55c30e9831f6/explore_code/sic_soc_explore.R#L161
+
+#Check what data we want
+cell <- nomis_get_metadata(id = "NM_17_1", concept = "CELL")
+
+
+#Test geographies...
+#Did data get backcast or are we going to have to do any geog harmonising again?
+nomis_get_metadata(id = "NM_17_1", concept = "GEOGRAPHY", type = "type") %>% print(n=60)
+
+#Trying TYPE432 "local authorities: district / unitary (as of April 2021"
+
+#Leave time out, get all times
+in_employment <- nomis_get_data(id = "NM_17_1", geography = "TYPE432", cell = '402719489') %>% 
+# in_employment <- nomis_get_data(id = "NM_17_1", time = "latest", geography = "TYPE432", cell = '402719489') %>% 
+  select(DATE_NAME,GEOGRAPHY_NAME,GEOGRAPHY_CODE,CELL_NAME,MEASURES_NAME,OBS_VALUE,OBS_STATUS,OBS_STATUS_NAME) %>% 
+  rename(ALL_IN_EMPLOYMENT_16PLUS = OBS_VALUE)
+
+#Rolling time period, this many in total - plenty for here
+unique(in_employment$DATE_NAME)[grepl('Dec',unique(in_employment$DATE_NAME))]
+
+#Check LA match...
+table(la22$LAD22CD %in% in_employment$GEOGRAPHY_CODE)
+
+#Falses are...? Ah I that's GB data isn't it? Haven't got employment numbers for NI
+la22$LAD22NM[!la22$LAD22CD %in% in_employment$GEOGRAPHY_CODE]
 
 
 
+#So will need to just use GB with this pop data
+
+#Start with a basic question then:
+#What's the proportion of high growth firms over the "all in employment 16+" figure?
 
 
+#For core cities? In which I'm also include BDR for comparison to those...
+#Add count values into here
+bd.core.emp <- bd.core %>%
+  right_join(
+    in_employment %>% 
+      select(code = GEOGRAPHY_CODE, DATE_NAME, ALL_IN_EMPLOYMENT_16PLUS, MEASURES_NAME) %>% 
+      pivot_wider(names_from = MEASURES_NAME, values_from = ALL_IN_EMPLOYMENT_16PLUS)
+  )
+  
+
+#NEXT: pick the timepoints from the DATE_NAME column in employment values
+#And recode so it'll match timepoints in the firm demog data
+#Then use that to join
 
 
 
