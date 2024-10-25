@@ -2,6 +2,8 @@
 #Excel data grabbed from here, stored in localdata (gitignored folder)
 #https://www.ons.gov.uk/businessindustryandtrade/business/activitysizeandlocation/datasets/businessdemographyreferencetable
 library(tidyverse)
+library(sf)
+library(tmap)
 library(zoo)
 library(nomisr)
 # library(stringdist)
@@ -97,6 +99,12 @@ table(la22$LAD22CD %in% births1718$code)
 
 #Name match? Yes, full, with commas removed
 table(la22$LAD22NM %in% births2122$region)
+
+#Also, for later mapping, get LA 22 boundaries and simplify for plotting speed
+#Get 2022 LA boundaries
+#Via https://geoportal.statistics.gov.uk/datasets/305779d69bf44feea05eeaa78ca26b5f_0/explore
+la22boundaries <- st_read("~/Dropbox/MapPolygons/UK/2022/Local_Authority_Districts_December_2022_UK") %>% mutate(LAD22NM = gsub(',','',LAD22NM)) %>% st_simplify(preserveTopology = T, dTolerance = 100)
+
 
 
 #So can find non-matching names in first timepoint (codes aren't same)
@@ -616,7 +624,7 @@ ggplot(
 #Migration efficiency provides a measure of polarity but not scale; 
 #so we use turnover for the latter: the sum of inward and outward flows divided by total zone population."
 
-#Combine births and deaths
+#Combine births,deaths,active,active10plus and high growth
 #And also active firms for turnover
 bd <- d$births %>% 
   rename(count_births = count) %>% 
@@ -626,8 +634,16 @@ bd <- d$births %>%
   left_join(
     d$active %>% select(region,year,count_active = count), by = c('region','year')
   ) %>%
+  left_join(
+    d$active10plus %>% select(region,year,count_active10plus = count), by = c('region','year')
+  ) %>%
+  left_join(
+    d$highgrowth %>% select(region,year,count_highgrowth = count), by = c('region','year')
+  ) %>%
   relocate(count_deaths, .after = count_births) %>% 
-  relocate(count_active, .after = count_deaths)
+  relocate(count_active, .after = count_deaths) %>% 
+  relocate(count_active10plus, .after = count_active) %>% 
+  relocate(count_highgrowth, .after = count_active10plus) 
 
 
 #Aggregate to MCAs and find firm growth efficiency for those summed numbers
@@ -720,6 +736,9 @@ bd.core <- bd %>%
   ) %>% 
   group_by(region) %>% 
   mutate(
+    #Smoothed variables
+    highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
+    #derived measures
     firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
     turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
     births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
@@ -734,6 +753,7 @@ ggplot(bd.core, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(r
   geom_hline(yintercept = 0) +
   coord_cartesian(xlim = c(2018,2021)) +
   labs(colour = 'Core city')
+
 
 
 
@@ -816,29 +836,150 @@ unique(in_employment$DATE_NAME)[grepl('Dec',unique(in_employment$DATE_NAME))]
 table(la22$LAD22CD %in% in_employment$GEOGRAPHY_CODE)
 
 #Falses are...? Ah I that's GB data isn't it? Haven't got employment numbers for NI
+#So will need to just use GB with this pop data
 la22$LAD22NM[!la22$LAD22CD %in% in_employment$GEOGRAPHY_CODE]
 
+#Keep only Jan to Dec dates and change to year name
+#(to match demog data)
+in_employment_jtd <- in_employment %>% 
+  filter(grepl('Dec',DATE_NAME)) %>% 
+  mutate(year = stringr::str_sub(DATE_NAME, start = -4) %>% as.numeric)
 
 
-#So will need to just use GB with this pop data
+
 
 #Start with a basic question then:
 #What's the proportion of high growth firms over the "all in employment 16+" figure?
 
 
-#For core cities? In which I'm also include BDR for comparison to those...
-#Add count values into here
+#For core cities? In which I'm also include BDR for comparison to those... (from filter)
+#Add 16+ in employment count values into here
 bd.core.emp <- bd.core %>%
-  right_join(
-    in_employment %>% 
-      select(code = GEOGRAPHY_CODE, DATE_NAME, ALL_IN_EMPLOYMENT_16PLUS, MEASURES_NAME) %>% 
-      pivot_wider(names_from = MEASURES_NAME, values_from = ALL_IN_EMPLOYMENT_16PLUS)
+  filter(code %in% in_employment$GEOGRAPHY_CODE) %>% #keep only GB LAs to match pop count data (then left join so dates match demog data)
+  left_join(
+    in_employment_jtd %>% 
+      select(code = GEOGRAPHY_CODE, year, ALL_IN_EMPLOYMENT_16PLUS, MEASURES_NAME) %>% 
+      pivot_wider(names_from = MEASURES_NAME, values_from = ALL_IN_EMPLOYMENT_16PLUS) %>% 
+      rename(population16plus_inemployment = Value, CI_population16plus_inemployment = Confidence),
+    by = c('year','code')
   )
   
 
-#NEXT: pick the timepoints from the DATE_NAME column in employment values
-#And recode so it'll match timepoints in the firm demog data
-#Then use that to join
+#High growth firms as proportion of 16+ in employment, with CIs?
+#So - we know that high growth firms dropping everywhere (state of economy presumably)
+#Issue here becomes separating out where's changing more
+#And... is this a useful denominator?
+ggplot(
+  bd.core.emp %>% 
+    filter(region!='Cardiff') %>% 
+    mutate(
+      highgrowthfirms_per_1000people = (count_highgrowth / population16plus_inemployment) * 1000,
+      lowerCI_highgrowthfirms_per_1000people = (count_highgrowth / (population16plus_inemployment - CI_population16plus_inemployment) ) * 1000,
+      upperCI_highgrowthfirms_per_1000people = (count_highgrowth / (population16plus_inemployment + CI_population16plus_inemployment) ) * 1000
+      # highgrowthfirms_per_1000people_movingav = rollapply(highgrowthfirms_per_1000people, 3, mean, align = 'center', fill = NA)
+        ), 
+       aes(x = year, y = highgrowthfirms_per_1000people, colour = fct_reorder(region,-highgrowthfirms_per_1000people))) +
+  geom_line(position = position_dodge(width = 0.5)) +
+  geom_point(size = 2, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lowerCI_highgrowthfirms_per_1000people, ymax = upperCI_highgrowthfirms_per_1000people), width = 0.2, position = position_dodge(width = 0.5)) +#"95% confidence interval (+/-)"
+  scale_color_brewer(palette = 'Paired') +
+  # coord_cartesian(xlim = c(2018,2021)) +
+  labs(colour = 'Core city')
+
+
+
+
+#NEXT UP TO TEST:
+#MAP OF SLOPES OF CHANGE FOR VARIOUS RESULTS
+
+#Can start with all of headline values births deaths etc
+
+#get slopes (for log data so all slopes comparable over time)
+#via https://github.com/DanOlner/ukcompare/blob/0a07b463cf96cbbf61920b10914d55c30e9831f6/explore_code/GVA_region_by_sector_explore.R#L3091C1-L3104C4
+LQ_slopes <- get_slope_and_se_safely(
+  data = bd, 
+  region,#slopes will be found within whatever grouping vars are added here
+  # y = log(count_births), x = year)
+  y = log(count_deaths), x = year)
+
+
+
+
+#Tick
+table(la22boundaries$LAD22NM %in% bd$region)
+table(bd$region %in% la22boundaries$LAD22NM)
+
+
+#Join geo and slopes for mapping
+bd.geo <- la22boundaries %>% 
+  rename(region = LAD22NM) %>% 
+  left_join(
+    bd,
+    by = c('region')
+    ) %>% 
+  left_join(
+    LQ_slopes,
+    by = 'region'
+  )
+
+
+tm_shape(bd.geo) +
+  tm_polygons('slope', n = 9) +
+  tm_layout(title = '', legend.outside = T) 
+  # tm_shape(
+  #   map %>% filter(!crosseszero90)
+  # ) +
+  # tm_borders(col='blue', lwd = 3) +
+  # tm_view(bbox = c(left=-180, bottom=-60, right=180, top=85))
+
+
+
+
+
+#Maps of firm efficency for those two first and last time points too
+#Do for all LAs so we can plot...
+bd.la <- bd %>% 
+  mutate(
+  firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+  turnover = (count_births + count_deaths)/(count_active),
+  births_over_active_percent = ((count_births)/(count_active))*100,
+  deaths_over_active_percent = ((count_deaths)/(count_active))*100
+) %>% 
+  group_by(region) %>% 
+  mutate(
+    #Smoothed variables
+    highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
+    #derived measures
+    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+    turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
+    births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
+    deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+
+
+
+#Reduce that to get facetted plot of two timepoints for firm efficiency
+#Before doing geo-join
+bd.la.efficiency.twopoints <- bd.la %>% 
+  select(region,code,year,firmefficency_movingav) %>% 
+  filter(year %in% c(2018,2021))#start and end points for 3 year moving av
+  
+
+
+
+bd.la.eff.geo <- la22boundaries %>% 
+  rename(region = LAD22NM) %>% 
+  left_join(
+    bd.la.efficiency.twopoints,
+    by = c('region')
+  ) 
+
+tm_shape(bd.la.eff.geo) +
+  tm_polygons('firmefficency_movingav', n = 9, palette = "BrBG") +
+  tm_layout(title = '', legend.outside = T) +
+  tm_facets(by = 'year')
+  
 
 
 
