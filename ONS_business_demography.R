@@ -967,16 +967,21 @@ bd.la.efficiency.twopoints <- bd.la %>%
   
 
 
-
+#Change some names for usefulness
 bd.la.eff.geo <- la22boundaries %>% 
   rename(region = LAD22NM) %>% 
   left_join(
     bd.la.efficiency.twopoints,
     by = c('region')
-  ) 
+  ) %>% 
+  mutate(
+    year = ifelse(year == 2018, '2017-19 average', '2020-22 average')
+  )
 
 tm_shape(bd.la.eff.geo) +
-  tm_polygons('firmefficency_movingav', n = 9, palette = "BrBG") +
+  tm_polygons('firmefficency_movingav', n = 9, palette = "RdBu", border.alpha = 0.4,
+              title = "Firm effiency\n0 = equal births + deaths\n 100 = all births no deaths\n-100 = all deaths no births") +
+  # tm_polygons('firmefficency_movingav', n = 9, palette = "BrBG", title = "Firm effiency\n0 = equal births + deaths\n 1 = all births no deaths\n-1 = all deaths no births") +
   tm_layout(title = '', legend.outside = T) +
   tm_facets(by = 'year')
   
