@@ -62,8 +62,8 @@ sy.geo <- readRDS('../localdata/sygeo.rds')
 ## Headlines
 
 * **High growth firms in South Yorkshire and nationally (10+ employees and 20%+ employee growth av per year over 3 years):**
-    + Since 2017, the number and proportion of high growth firms has *dropped* almost everywhere - but the position of different regions _relative to each other_ have hardly changed.
-    + South Yorkshire (and Sheffield, Barnsley, Doncaster + Rotherham separately) have remained at or near the bottom for proportion of high growth firms, with Rotherham in particular dropping over time. (See @fig-highgrowth-raw for raw MCA numbers, @fig-highgrowth-percentoffirms10plus as percent of active & @fig-highgrowth-percentoffirms10plus-cores for the 4 places - **hover for preview** or see below.)
+    + Since 2017, the **number and proportion of high growth firms has *dropped* almost everywhere** - but the **position of different regions _relative to each other_ have hardly changed.**
+    + South Yorkshire (and Sheffield, Barnsley, Doncaster + Rotherham separately) have **remained at or near the bottom for proportion of high growth firms**, with Rotherham in particular dropping over time. (See @fig-highgrowth-raw for raw MCA numbers, @fig-highgrowth-percentoffirms10plus as percent of active & @fig-highgrowth-percentoffirms10plus-cores for the 4 places - **hover for preview** or see below.)
 
 * **Business births and deaths:**
     + Nationally, business births have outnumbered deaths in every year in this data (though with exceptions, see map below) - but **firm deaths have steadily increased in last 4 or so years.**
