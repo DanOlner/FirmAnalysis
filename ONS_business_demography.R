@@ -490,6 +490,9 @@ d <- d %>% purrr::map(
 )
 
 
+#Save
+saveRDS(d,'data/businessdemog.rds')
+
 
 ## Examine high growth firm raw numbers----
 
@@ -505,19 +508,23 @@ mcas.hg <- d$highgrowth %>%
 ggplot(mcas.hg, aes(x = year, y = count, colour = fct_reorder(MCA,-count))) +
   geom_line() +
   geom_point() +
-  scale_color_brewer(palette = 'Paired')
+  scale_color_brewer(palette = 'Paired') +
+  scale_y_log10()
 
 
 
 #Let's do same for core cities... each is already separate LA, don't need to summarise
 core.hg <- d$highgrowth %>%
-  filter(corecity == 'Core city') %>% 
+  # filter(corecity == 'Core city') %>% 
+  filter(corecity == 'Core city' | grepl('barnsley|doncast|rotherh', region, ignore.case = T)) %>% 
+  filter(!grepl('cardiff|Belfast', region, ignore.case = T)) %>% 
   rename(MCA = CAUTH24NM)
 
 ggplot(core.hg, aes(x = year, y = count, colour = fct_reorder(region,-count))) +
   geom_line() +
   geom_point() +
-  scale_color_brewer(palette = 'Paired')
+  scale_color_brewer(palette = 'Paired') +
+  scale_y_log10()
 
 
 #OK, now to repeat that as PROPORTION OF ACTIVE FIRMS
@@ -541,13 +548,27 @@ mcas.hg.prop <- hg_propof10plusfirms %>%
     count_active10plus = sum(count_active10plus)
     ) %>% 
   rename(MCA = CAUTH24NM) %>% 
-  mutate(highgrowthfirms_aspercentof_firms10plusemployees = (count_highgrowth/count_active10plus) * 100 )
+  mutate(
+    highgrowthfirms_aspercentof_firms10plusemployees = (count_highgrowth/count_active10plus) * 100,
+    highgrowthfirms_aspercentof_firms10plusemployees_movingav = rollapply(highgrowthfirms_aspercentof_firms10plusemployees, 3, mean, align = 'center', fill = NA)
+    )
+  
 
 
 ggplot(mcas.hg.prop, aes(x = year, y = highgrowthfirms_aspercentof_firms10plusemployees, colour = fct_reorder(MCA,-highgrowthfirms_aspercentof_firms10plusemployees))) +
   geom_line() +
   geom_point() +
-  scale_color_brewer(palette = 'Paired')
+  scale_color_brewer(palette = 'Paired') 
+
+#3 yr smoothed version  
+ggplot(mcas.hg.prop, 
+       aes(x = year, y = highgrowthfirms_aspercentof_firms10plusemployees_movingav, colour = fct_reorder(MCA,-highgrowthfirms_aspercentof_firms10plusemployees_movingav))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021)) 
+  
+  
 
 
 
@@ -570,7 +591,8 @@ ggplot(
   geom_point(size = 3) +
   scale_color_brewer(palette = 'Paired') +
   scale_y_log10() +
-  scale_x_log10() 
+  scale_x_log10()
+  
 
 
 
@@ -579,7 +601,8 @@ ggplot(
 #THIS LOOKS TOO VOLATILE, PROB NOT ENOUGH DATA
 #Use moving av again
 core.hg.prop <- hg_propof10plusfirms %>%
-  filter(corecity == 'Core city') %>% 
+  filter(corecity == 'Core city' | grepl('barnsley|doncast|rotherh', region, ignore.case = T)) %>% 
+  filter(!grepl('cardiff|Belfast', region, ignore.case = T)) %>% 
   mutate(highgrowthfirms_aspercentof_firms10plusemployees = (count_highgrowth/count_active10plus) * 100 ) %>% 
   group_by(region) %>% 
   mutate(
@@ -609,6 +632,10 @@ ggplot(
   scale_color_brewer(palette = 'Paired') +
   scale_y_log10() +
   scale_x_log10() 
+
+
+
+
 
 
 
@@ -658,6 +685,7 @@ bd.mca <- bd %>%
     count_active = sum(count_active)
     ) %>% 
   rename(MCA = CAUTH24NM) %>% 
+  ungroup() %>% 
   mutate(
     firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
     turnover = (count_births + count_deaths)/(count_active),
@@ -680,6 +708,53 @@ ggplot(bd.mca, aes(x = year, y = firmefficency, colour = fct_reorder(MCA,-firmef
   geom_point() +
   scale_color_brewer(palette = 'Paired') +
   geom_hline(yintercept = 0)
+
+ggplot(bd.mca, aes(x = year, y = count_births, colour = fct_reorder(MCA,-firmefficency))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  scale_y_log10()
+
+ggplot(bd.mca, aes(x = year, y = count_deaths, colour = fct_reorder(MCA,-firmefficency))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') 
+
+
+
+
+ggplot(bd.mca, aes(x = year, y = births_over_active_percent_movingav, colour = fct_reorder(MCA,-births_over_active_percent_movingav))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021))
+
+ggplot(bd.mca, aes(x = year, y = deaths_over_active_percent_movingav, colour = fct_reorder(MCA,-deaths_over_active_percent_movingav))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021))
+
+
+
+#Let's do a faceted version of those last two with same scale, side by side if poss
+bd.mca.birthdeath <- bd.mca %>% 
+  ungroup() %>% 
+  select(MCA,year,births_over_active_percent_movingav,deaths_over_active_percent_movingav,turnover_movingav) %>% 
+  pivot_longer(cols = contains("over_active_percent_movingav"), names_to = "birthsdeaths", values_to = "percent")
+
+ggplot(bd.mca.birthdeath, aes(x = year, y = percent, colour = fct_reorder(MCA,-turnover_movingav))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021)) +
+  facet_wrap(~birthsdeaths, nrow = 1)
+
+
+
+
+
+
 
 
 #Try smoothed version. Shouldn't matter whether smoothing underlying values or this result, I don't think
@@ -704,11 +779,57 @@ ggplot(bd.mca, aes(x = year, y = turnover_movingav, colour = fct_reorder(MCA,-tu
   coord_cartesian(xlim = c(2018,2021))
 
 
+
+
+
+
+
+
+
+
 #Births and deaths as prop of active plotted separately
 #Time plot of smoothed
 ggplot(
   bd.mca %>% filter(year %in% c(2018,2021)),
   aes(x = births_over_active_percent_movingav, y = deaths_over_active_percent_movingav, shape = factor(year), group = MCA, colour = fct_reorder(MCA,-turnover_movingav))
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_y_log10() +
+  scale_x_log10() +
+  coord_fixed() +
+  labs(colour = 'MCAs', shape = 'Year (3 yr av)')
+
+#SAME BUT WITH ACTUAL ARROWS
+bd.mca.wide <- bd.mca %>% 
+  filter(year %in% c(2018,2021)) %>% 
+  select(MCA,year,firmefficency:deaths_over_active_percent_movingav) %>% 
+  pivot_wider(names_from = year, values_from = firmefficency:deaths_over_active_percent_movingav)
+
+ggplot(
+  bd.mca.wide,
+  aes(colour = fct_reorder(MCA,-turnover_movingav_2021))
+) +
+  geom_segment(aes(x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018 ,
+                   xend = births_over_active_percent_movingav_2021, yend = deaths_over_active_percent_movingav_2021),
+               arrow = arrow(length = unit(0.5, "cm")),
+               size = 1) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_point(aes(x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018), size = 3) +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_y_log10() +
+  scale_x_log10() +
+  coord_fixed() +
+  labs(colour = 'MCA')
+
+
+
+#Efficiency vs turnover
+ggplot(
+  bd.mca %>% filter(year %in% c(2018,2021)),
+  aes(x = firmefficency_movingav, y = turnover_movingav, shape = factor(year), group = MCA, colour = fct_reorder(MCA,-turnover_movingav))
 ) +
   geom_line() +
   geom_point(size = 3) +
@@ -728,6 +849,7 @@ ggplot(
 bd.core <- bd %>%
   # filter(corecity == 'Core city') %>% 
   filter(corecity == 'Core city' | grepl('barns|doncaster|rotherh',region,ignore.case=T)) %>% #version that includes other places in SY
+  filter(!grepl('cardiff|belfast',region,ignore.case=T)) %>% 
   mutate(
     firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
     turnover = (count_births + count_deaths)/(count_active),
@@ -754,10 +876,47 @@ ggplot(bd.core, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(r
   coord_cartesian(xlim = c(2018,2021)) +
   labs(colour = 'Core city')
 
+ggplot(bd.core, aes(x = year, y = births_over_active_percent_movingav, colour = fct_reorder(region,-births_over_active_percent_movingav))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021))
+
+ggplot(bd.core, aes(x = year, y = deaths_over_active_percent_movingav, colour = fct_reorder(region,-deaths_over_active_percent_movingav))) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021))
+
+#FACETED VERSION, MUCH BETTER
+bd.core.birthdeath <- bd.core %>% 
+  ungroup() %>% 
+  select(region,year,`Births as percent of active firms` = births_over_active_percent_movingav,
+         `Deaths as percent of active firms` = deaths_over_active_percent_movingav,turnover_movingav) %>% 
+  pivot_longer(cols = contains("percent of active firms"), names_to = "birthsdeaths", values_to = "percent")
+
+
+ggplot(bd.core.birthdeath %>% mutate(SBDR = grepl('barnsley|doncast|rotherh|sheffield',region,ignore.case=T)), 
+     aes(size = SBDR, x = year, y = percent, colour = fct_reorder(region,-turnover_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_size_manual(values = c(0.5,2)) +
+  coord_cartesian(xlim = c(2018,2021)) +
+  facet_wrap(~birthsdeaths, nrow = 1) +
+  labs(colour = 'MCA') +
+  xlab('3 year moving average, mid-year-point')
 
 
 
-#Two var plot
+
+
+
+
+
+
+
+#Two var plot births/deaths over active
 ggplot(
   bd.core %>% filter(year %in% c(2018,2021), region!='Belfast'),
   aes(x = births_over_active_percent_movingav, y = deaths_over_active_percent_movingav, shape = factor(year), group = region, colour = fct_reorder(region,-turnover_movingav))
@@ -770,6 +929,23 @@ ggplot(
   scale_x_log10() +
   coord_fixed() +
   labs(colour = 'MCAs', shape = 'Year (3 yr av)')
+
+
+#Two var plot of efficiency v turnover
+ggplot(
+  bd.core %>% filter(year %in% c(2018,2021), region!='Belfast'),
+  aes(x = firmefficency_movingav, y = turnover_movingav, shape = factor(year), group = region, colour = fct_reorder(region,-turnover_movingav))
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_y_log10() +
+  scale_x_log10() +
+  # coord_fixed() +
+  labs(colour = 'MCAs', shape = 'Year (3 yr av)')
+
+
 
 
 #Version with arrows via geom_segment?
@@ -790,11 +966,12 @@ ggplot(
                arrow = arrow(length = unit(0.5, "cm")),
                size = 1) +
   scale_color_brewer(palette = 'Paired') +
+  geom_point(aes(x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018), size = 3) +
   geom_abline(slope = 1, intercept = 0) +
   scale_y_log10() +
   scale_x_log10() +
   coord_fixed() +
-  labs(colour = 'MCAs')
+  labs(colour = 'Core cites + BDR')
 
 
 
@@ -875,39 +1052,60 @@ ggplot(
     mutate(
       highgrowthfirms_per_1000people = (count_highgrowth / population16plus_inemployment) * 1000,
       lowerCI_highgrowthfirms_per_1000people = (count_highgrowth / (population16plus_inemployment - CI_population16plus_inemployment) ) * 1000,
-      upperCI_highgrowthfirms_per_1000people = (count_highgrowth / (population16plus_inemployment + CI_population16plus_inemployment) ) * 1000
+      upperCI_highgrowthfirms_per_1000people = (count_highgrowth / (population16plus_inemployment + CI_population16plus_inemployment) ) * 1000,
+      active10plus_per_1000people = (count_active10plus / population16plus_inemployment) * 1000,
+      lowerCI_active10plus_per_1000people = (count_active10plus / (population16plus_inemployment - CI_population16plus_inemployment) ) * 1000,
+      upperCI_active10plus_per_1000people = (count_active10plus / (population16plus_inemployment + CI_population16plus_inemployment) ) * 1000
       # highgrowthfirms_per_1000people_movingav = rollapply(highgrowthfirms_per_1000people, 3, mean, align = 'center', fill = NA)
         ), 
+       # aes(x = year, y = active10plus_per_1000people, colour = fct_reorder(region,-highgrowthfirms_per_1000people))) +
        aes(x = year, y = highgrowthfirms_per_1000people, colour = fct_reorder(region,-highgrowthfirms_per_1000people))) +
   geom_line(position = position_dodge(width = 0.5)) +
   geom_point(size = 2, position = position_dodge(width = 0.5)) +
+  # geom_errorbar(aes(ymin = lowerCI_active10plus_per_1000people, ymax = upperCI_active10plus_per_1000people), width = 0.2, position = position_dodge(width = 0.5)) +#"95% confidence interval (+/-)"
   geom_errorbar(aes(ymin = lowerCI_highgrowthfirms_per_1000people, ymax = upperCI_highgrowthfirms_per_1000people), width = 0.2, position = position_dodge(width = 0.5)) +#"95% confidence interval (+/-)"
   scale_color_brewer(palette = 'Paired') +
   # coord_cartesian(xlim = c(2018,2021)) +
-  labs(colour = 'Core city')
+  labs(colour = 'Core city', y = 'High growth firms (10+ employees and 20%+ employee growth over 3 yrs) per 1000 employed 16+')
+  # labs(colour = 'Core city', y = 'Active firms 10+ employees per 1000 employed 16+')
+  
 
 
 
 
 #NEXT UP TO TEST:
-#MAP OF SLOPES OF CHANGE FOR VARIOUS RESULTS
+#MAP OF SLOPES OF CHANGE FOR VARIOUS RESULTS----
 
 #Can start with all of headline values births deaths etc
 
+#Get SY to overlay
+#Urgh that's horrible...
+# sy.geo <- la22boundaries %>% 
+#   filter(grepl('barns|doncast|rotherh|sheffield', LAD22NM, ignore.case = T)) %>% 
+#   st_union()
+
+#Let's use ITL2 borders instead
+itl2 <- st_read('~/Dropbox/YPERN/R/YPERN_dataexplore/data/geographies/International_Territorial_Level_2_January_2021_UK_BFE_V2_2022_-4735199360818908762/ITL2_JAN_2021_UK_BFE_V2.shp')
+
+sy.geo <- itl2 %>% filter(ITL221NM == 'South Yorkshire')
+
+#save for quick load in quarto
+saveRDS(sy.geo,'localdata/sygeo.rds')
+
+
 #get slopes (for log data so all slopes comparable over time)
 #via https://github.com/DanOlner/ukcompare/blob/0a07b463cf96cbbf61920b10914d55c30e9831f6/explore_code/GVA_region_by_sector_explore.R#L3091C1-L3104C4
-LQ_slopes <- get_slope_and_se_safely(
+firm_slopes <- get_slope_and_se_safely(
   data = bd, 
   region,#slopes will be found within whatever grouping vars are added here
   # y = log(count_births), x = year)
   y = log(count_deaths), x = year)
-
-
-
+  # y = log(count_highgrowth), x = year)
+  # y = log(count_active10plus), x = year)
 
 #Tick
-table(la22boundaries$LAD22NM %in% bd$region)
-table(bd$region %in% la22boundaries$LAD22NM)
+# table(la22boundaries$LAD22NM %in% bd$region)
+# table(bd$region %in% la22boundaries$LAD22NM)
 
 
 #Join geo and slopes for mapping
@@ -918,14 +1116,15 @@ bd.geo <- la22boundaries %>%
     by = c('region')
     ) %>% 
   left_join(
-    LQ_slopes,
+    firm_slopes,
     by = 'region'
   )
 
-
-tm_shape(bd.geo) +
-  tm_polygons('slope', n = 9) +
-  tm_layout(title = '', legend.outside = T) 
+tm_shape(bd.geo %>% mutate(approx_pct_change = slope * 100)) +
+  tm_polygons('approx_pct_change', n = 9, palette = "RdBu", border.alpha = 0.4) +
+  tm_layout(title = '', legend.outside = T) +
+  tm_shape(sy.geo) + 
+  tm_borders(lwd = 2, col = 'black') 
   # tm_shape(
   #   map %>% filter(!crosseszero90)
   # ) +
@@ -933,6 +1132,56 @@ tm_shape(bd.geo) +
   # tm_view(bbox = c(left=-180, bottom=-60, right=180, top=85))
 
 
+
+
+#Facetted version showing birth and death slopes on the same scale next to each other
+birthslopes <- get_slope_and_se_safely(
+    data = bd, 
+    region,#slopes will be found within whatever grouping vars are added here
+    y = log(count_births), x = year
+    )
+  
+deathslopes <- get_slope_and_se_safely(
+    data = bd, 
+    region,#slopes will be found within whatever grouping vars are added here
+    y = log(count_deaths), x = year
+    )
+  
+bd.geo <- la22boundaries %>% 
+  rename(region = LAD22NM) %>% 
+  left_join(
+    bd,
+    by = c('region')
+  ) %>% 
+  left_join(
+    birthslopes %>% rename(`Births % change / yr (approx)` = slope, birth_se = se),
+    by = 'region'
+  ) %>% 
+  left_join(
+    deathslopes %>% rename(`Deaths % change / yr (approx)` = slope, death_se = se),
+    by = 'region'
+  )
+
+#Make slopes long so can facet
+bd.geo.long <- bd.geo %>% 
+  select(region,`Births % change / yr (approx)`,`Deaths % change / yr (approx)`) %>% 
+  pivot_longer(
+    cols = contains("approx"), names_to = "birthsdeathslopes", values_to = "approx_percent"
+  ) %>% 
+  mutate(approx_percent = approx_percent * 100)
+
+tm_shape(bd.geo.long) +
+  tm_polygons('approx_percent', n = 13, palette = "RdBu", border.alpha = 0.4, 
+              title = "Firm births & deaths\nApprox % change per yr") +
+  tm_layout(title = '', legend.outside = T) +
+  tm_facets(by = 'birthsdeathslopes') +
+  tm_shape(sy.geo) + #after facets or doesn't work
+  tm_borders(lwd = 2, col = 'black') 
+
+
+
+
+#OTHER MAPS----
 
 
 
@@ -943,7 +1192,8 @@ bd.la <- bd %>%
   firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
   turnover = (count_births + count_deaths)/(count_active),
   births_over_active_percent = ((count_births)/(count_active))*100,
-  deaths_over_active_percent = ((count_deaths)/(count_active))*100
+  deaths_over_active_percent = ((count_deaths)/(count_active))*100,
+  highgrowth_over_active_percent = ((count_highgrowth)/(count_active))*100
 ) %>% 
   group_by(region) %>% 
   mutate(
@@ -953,7 +1203,8 @@ bd.la <- bd %>%
     firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
     turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
     births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
-    deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
+    deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA),
+    highgrowth_over_active_percent_movingav = rollapply(highgrowth_over_active_percent, 3, mean, align = 'center', fill = NA)
   ) %>% 
   ungroup()
 
@@ -962,7 +1213,7 @@ bd.la <- bd %>%
 #Reduce that to get facetted plot of two timepoints for firm efficiency
 #Before doing geo-join
 bd.la.efficiency.twopoints <- bd.la %>% 
-  select(region,code,year,firmefficency_movingav) %>% 
+  # select(region,code,year,firmefficency_movingav,births_over_active_percent_movingav,deaths_over_active_percent_movingav,highgrowth_movingav,firmefficency_movingav) %>% 
   filter(year %in% c(2018,2021))#start and end points for 3 year moving av
   
 
@@ -979,11 +1230,15 @@ bd.la.eff.geo <- la22boundaries %>%
   )
 
 tm_shape(bd.la.eff.geo) +
-  tm_polygons('firmefficency_movingav', n = 9, palette = "RdBu", border.alpha = 0.4,
-              title = "Firm effiency\n0 = equal births + deaths\n 100 = all births no deaths\n-100 = all deaths no births") +
-  # tm_polygons('firmefficency_movingav', n = 9, palette = "BrBG", title = "Firm effiency\n0 = equal births + deaths\n 1 = all births no deaths\n-1 = all deaths no births") +
+  # tm_polygons('deaths_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
+  # tm_polygons('births_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
+  # tm_polygons('turnover_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
+  # tm_polygons('highgrowth_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher', title = "") +
+  tm_polygons('firmefficency_movingav', n = 9, palette = "RdBu", border.alpha = 0.4, title = "Firm effiency\n0 = equal births + deaths\n 1 = all births no deaths\n-1 = all deaths no births") +
   tm_layout(title = '', legend.outside = T) +
-  tm_facets(by = 'year')
+  tm_facets(by = 'year') +
+  tm_shape(sy.geo) + #after facets or doesn't work
+  tm_borders(lwd = 2, col = 'black') 
   
 
 

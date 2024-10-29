@@ -1,0 +1,583 @@
+---
+title: "ONS Business Demography dataset 2017-22: what does it say about South Yorkshire?"
+author: "Dan Olner"
+format: html
+execute:
+  echo: false
+  message: false
+  warning: false
+---
+
+
+```{r, setup}
+#Original code to work all this out is in same repo, "ONS_business_demography.R"
+
+#https://yihui.org/knitr/options/
+knitr::opts_chunk$set(
+  comment = '', fig.width = 9, fig.height = 5, dpi = 150
+  # comment = '', fig.width = 13, fig.height = 8, dpi = 150
+)
+
+library(tidyverse)
+library(sf)
+library(tmap)
+library(zoo)
+source('../functions.R')
+
+#List of separate dataframes for each key sheet from the original data
+d <- readRDS('../data/businessdemog.rds')
+
+#Combine all
+bd <- d$births %>% 
+  rename(count_births = count) %>% 
+  left_join(
+    d$deaths %>% select(region,year,count_deaths = count), by = c('region','year')
+  ) %>% 
+  left_join(
+    d$active %>% select(region,year,count_active = count), by = c('region','year')
+  ) %>%
+  left_join(
+    d$active10plus %>% select(region,year,count_active10plus = count), by = c('region','year')
+  ) %>%
+  left_join(
+    d$highgrowth %>% select(region,year,count_highgrowth = count), by = c('region','year')
+  ) %>%
+  relocate(count_deaths, .after = count_births) %>% 
+  relocate(count_active, .after = count_deaths) %>% 
+  relocate(count_active10plus, .after = count_active) %>% 
+  relocate(count_highgrowth, .after = count_active10plus) 
+
+la22boundaries <- st_read("~/Dropbox/MapPolygons/UK/2022/Local_Authority_Districts_December_2022_UK", quiet = T) %>% mutate(LAD22NM = gsub(',','',LAD22NM)) %>% st_simplify(preserveTopology = T, dTolerance = 100)
+
+#Made here: 
+sy.geo <- readRDS('../localdata/sygeo.rds')
+
+
+```
+
+
+
+# Headlines
+
+* **High growth firms in South Yorkshire and nationally (10+ employees and 20%+ employee growth av per year over 3 years):**
+    + Since 2017, the number and proportion of high growth firms has *dropped* almost everywher - but place's positions relative to each other have hardly changed.
+    + South Yorkshire (and Sheffield, Barnley, Doncaster + Rotherham separately) have remained at or near the bottom for proportion of high growth firms, with Rotherham in particular dropping over time. (See @fig-highgrowth-raw, @fig-highgrowth-percentoffirms10plus, @fig-highgrowth-percentoffirms10plus-cores - **hover for preview** or see below.)
+
+* **Business births and deaths:**
+    + Nationally, business births have outnumbered deaths in every year in this data - but **firm deaths have steadily increased in last 4 or so years.**
+    + South Yorkshire is near the top of MCAs for births as a percent of active firms - increasing over time, putting it in a higher group with West Midlands, Liverpool and Greater Manchester. SY has followed the national trend of increasing firm deaths as a percent of active firms, sitting in the middle rankings. (See @fig-birthsdeaths2axis_MCA_facet.)
+    + @fig-birthsdeaths2axis_core_facet examines the same for **core cities plus BDR**. The stand-out here is **Doncaster** with high birth and death proportions compared both to other core cities and the other three SY places. Since 2018-20, all four places **except Sheffield** have seen births *and* deaths relative to active firms *rise*. Sheffield is relatively **low for births** and, in this data, it has dropped to the **lowest birth value.** (Note: only compared to the local authorities in this short list.)
+
+
+
+# The data used 
+
+* The [ONS Business Demography dataset](https://www.ons.gov.uk/businessindustryandtrade/business/activitysizeandlocation/datasets/businessdemographyreferencetable) contains counts of active firms, births, deaths, 'high growth' firms (20%+ employee growth over 3 years) and active firms with 10+ employees, from 2017 to 2022.
+* At local authority or MCA level, it does **not** break these counts down by sector (those are only at national level).
+* Here, it has been harmonised to backcast 2022 local authority borders to create a time series not present in the original data.
+* Code is [here](https://github.com/DanOlner/FirmAnalysis/blob/master/ONS_business_demography.R), quarto code for this report is [here]().
+
+
+# The detail / plots
+
+## High growth firms
+
+Raw high growth firm numbers have been declining almost everywhere in the UK since 2017. @fig-highgrowth-raw shows raw count of high growth firms for MCAs (thicker line is South Yorkshire).
+
+However, most places haven't changed **relative** position very much over time, with one or two exceptions. 
+
+```{r, fig-highgrowth-raw}
+#| label: fig-highgrowth-raw
+#| fig-cap: "For MCAs: Count of high growth firms 2017 to 2021. Log scale for size comparisons."
+
+mcas.hg <- d$highgrowth %>%
+  filter(!is.na(CAUTH24NM)) %>% 
+  group_by(CAUTH24NM,year) %>%
+  summarise(count = sum(count)) %>% 
+  rename(MCA = CAUTH24NM)
+
+
+ggplot(mcas.hg %>% mutate(SY = MCA == "South Yorkshire"), 
+       aes(x = year, y = count, colour = fct_reorder(MCA,-count), size = SY)) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_y_log10() +
+  scale_size_manual(values = c(0.5,2.5)) +
+  labs(colour = 'MCA') +
+  guides(size = F) 
+  # ggtitle('Count of high growth firms in MCAs 2017 to 2021') +
+  # theme(plot.title = element_text(hjust = 0.5, face = 'bold'))
+
+```
+
+The same overall pattern is visible in @fig-highgrowth-percentoffirms10plus, looking at high growth firms as a percent of active 10+ employee firms ("high growth firms" in ONS is also 10+ employees only). 
+
+Thicker line is South Yorkshire. 
+
+**Liverpool City Region** appears to be the only MCA bucking the trend.
+
+Separate analysis shows it is mostly the drop in high growth firm count - not a large increase in active firms overall - causing this change. But note that firms can drop in/out of the "high growth" category with e.g. just one year of below-20% employee growth.
+
+
+```{r, fig-highgrowth-percentoffirms10plus}
+#| label: fig-highgrowth-percentoffirms10plus
+#| fig-cap: "For MCAs: high growth firms as a percent of all active firms 10+ employees in MCAs, smoothed 3 yr average 2017/19 to 2020/22."
+
+#Merge as new column to make division easy
+hg_propof10plusfirms <- d$highgrowth %>% 
+  rename(count_highgrowth = count) %>% 
+  left_join(
+    d$active10plus %>% select(region,year,count_active10plus = count), by = c('region','year')
+  ) 
+
+#Repeat plots
+#Have to get percent here so it's after summing counts
+mcas.hg.prop <- hg_propof10plusfirms %>%
+  filter(!is.na(CAUTH24NM)) %>% 
+  group_by(CAUTH24NM,year) %>%
+  summarise(
+    count_highgrowth = sum(count_highgrowth),
+    count_active10plus = sum(count_active10plus)
+    ) %>% 
+  rename(MCA = CAUTH24NM) %>% 
+  mutate(
+    highgrowthfirms_aspercentof_firms10plusemployees = (count_highgrowth/count_active10plus) * 100,
+    highgrowthfirms_aspercentof_firms10plusemployees_movingav = rollapply(highgrowthfirms_aspercentof_firms10plusemployees, 3, mean, align = 'center', fill = NA)
+    )
+
+#3 yr  
+ggplot(mcas.hg.prop %>% mutate(SY = MCA == "South Yorkshire"), 
+       aes(size = SY, x = year, y = highgrowthfirms_aspercentof_firms10plusemployees_movingav, colour = fct_reorder(MCA,-highgrowthfirms_aspercentof_firms10plusemployees_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021)) + 
+  scale_size_manual(values = c(0.5,2.5)) +
+  labs(colour = 'MCA') +
+  guides(size = F) +
+  ylab('High growth firms as % of active 10+ employee firms')
+
+```
+
+
+@fig-highgrowth-percentoffirms10plus-cores also shows high growth firms as a percent of active firms but showing **Sheffield, Barnsley, Doncaster & Rotherham** separately (thicker lines) against English/Scottish **core cities** (minus Cardiff & Belfast).
+
+The same story of stable positions against secular trend dropping is here, with S+BDR always near the bottom - but Rotherham more recently dropping more than others (and again, Liverpool the only place here goin the other way).
+
+Using 16+ in employment (not shown here) doesn't change the relative position / direction of S+BDR.
+
+Separate analysis again shows, for S+BDR, drops in raw 'high growth' firms against (smaller) rises in 10+ employee active firms.
+
+
+```{r, fig-highgrowth-percentoffirms10plus-cores}
+#| label: fig-highgrowth-percentoffirms10plus-cores
+#| fig-cap: "For core cities plus Barnsley/Doncaster/Rotherham: High growth firms as a percent of all active firms 10+ employees, smoothed 3 yr average 2017/19 to 2020/22."
+
+#Let's do same for core cities... each is already separate LA, don't need to summarise
+#THIS LOOKS TOO VOLATILE, PROB NOT ENOUGH DATA FOR NON SMOOTHED
+#Use moving av again
+core.hg.prop <- hg_propof10plusfirms %>%
+  filter(corecity == 'Core city' | grepl('barnsley|doncast|rotherh', region, ignore.case = T)) %>% 
+  filter(!grepl('cardiff|Belfast', region, ignore.case = T)) %>% 
+  mutate(highgrowthfirms_aspercentof_firms10plusemployees = (count_highgrowth/count_active10plus) * 100 ) %>% 
+  group_by(region) %>% 
+  mutate(
+    count_highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
+    count_active10plus_movingav = rollapply(count_active10plus, 3, mean, align = 'center', fill = NA),
+    highgrowthfirms_aspercentof_firms10plusemployees_movingav = rollapply(highgrowthfirms_aspercentof_firms10plusemployees, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+  
+#Volatile, use moving av
+ggplot(core.hg.prop%>% mutate(SBDR = grepl('barnsley|doncast|rotherh|sheffield',region,ignore.case=T)), 
+       aes(size = SBDR, x = year, y = highgrowthfirms_aspercentof_firms10plusemployees_movingav, colour = fct_reorder(region,-highgrowthfirms_aspercentof_firms10plusemployees_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2021)) +
+  labs(colour = 'Core cities (plus BDR)') +
+  scale_size_manual(values = c(0.5,2.5)) +
+  # scale_y_log10() +
+  guides(size = F) +
+  ylab('High growth firms as % of active 10+ employee firms')
+
+
+```
+
+
+## Births and deaths
+
+Nationally, business births have outnumbered deaths in every year in this data - but **firm deaths have steadily increased in last 4 or so years.**
+
+@fig-birthsdeaths2axis_MCA_facet shows South Yorkshire near the top of MCAs for births as a percent of active firms - increasing over time, putting it in a higher group with West Midlands, Liverpool and Greater Manchester. SY has followed the national trend of increasing firm deaths as a percent of active firms, sitting in the middle rankings. 
+
+```{r}
+#| label: fig-birthsdeaths2axis_MCA_facet
+#| fig-cap: "For MCAs: births vs deaths as a percent of all active firms, 3 year moving average 2017/19 to 2020/22."
+#| fig-height: 7
+
+bd.mca <- bd %>%
+  filter(!is.na(CAUTH24NM)) %>% 
+  group_by(CAUTH24NM,year) %>%
+  summarise(
+    count_births = sum(count_births),
+    count_deaths = sum(count_deaths),
+    count_active = sum(count_active)
+    ) %>% 
+  rename(MCA = CAUTH24NM) %>% 
+  mutate(
+    firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+    turnover = (count_births + count_deaths)/(count_active),
+    births_over_active_percent = ((count_births)/(count_active))*100,
+    deaths_over_active_percent = ((count_deaths)/(count_active))*100
+  ) %>% 
+  group_by(MCA) %>% 
+  mutate(
+    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+    turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
+    births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
+    deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+
+
+#Let's do a faceted version of those last two with same scale, side by side if poss
+bd.mca.birthdeath <- bd.mca %>% 
+  ungroup() %>% 
+  select(MCA,year,`Births as percent of active firms` = births_over_active_percent_movingav,
+         `Deaths as percent of active firms` = deaths_over_active_percent_movingav,turnover_movingav) %>% 
+  pivot_longer(cols = contains("percent of active firms"), names_to = "birthsdeaths", values_to = "percent") %>% 
+  mutate(MCA = stringr::str_sub(MCA, start = 1, end=9))
+
+ggplot(bd.mca.birthdeath %>% mutate(SY = grepl("South Y",MCA,ignore.case=T)), 
+       aes(size = SY, x = year, y = percent, colour = fct_reorder(MCA,-turnover_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_size_manual(values = c(0.5,2)) +
+  coord_cartesian(xlim = c(2018,2021)) +
+  facet_wrap(~birthsdeaths, nrow = 1) +
+  labs(colour = 'MCA') +
+  xlab('3 year moving average, mid-year-point') +
+  guides(size = F)
+
+
+```
+
+@fig-birthsdeaths2axis_core_facet examines the same for **core cities plus BDR**. The stand-out here is **Doncaster** with high birth and death proportions compared both to other core cities and the other three SY places. Since 2018-20, all four places **except Sheffield** have seen births *and* deaths relative to active firms *rise*. Sheffield is relatively **low for births** and, in this data, it has dropped to the **lowest birth value.** (Note: only compared to the local authorities in this short list.)
+
+
+```{r}
+#| label: fig-birthsdeaths2axis_core_facet
+#| fig-cap: "For core cities plus BDR: births vs deaths as a percent of all active firms, 3 year moving average 2017/19 to 2020/22."
+#| fig-height: 7
+
+
+bd.core <- bd %>%
+  # filter(corecity == 'Core city') %>% 
+  filter(corecity == 'Core city' | grepl('barns|doncaster|rotherh',region,ignore.case=T)) %>% #version that includes other places in SY
+  filter(!grepl('cardiff|belfast',region,ignore.case=T)) %>% 
+  mutate(
+    firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+    turnover = (count_births + count_deaths)/(count_active),
+    births_over_active_percent = ((count_births)/(count_active))*100,
+    deaths_over_active_percent = ((count_deaths)/(count_active))*100
+  ) %>% 
+  group_by(region) %>% 
+  mutate(
+    #Smoothed variables
+    highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
+    #derived measures
+    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+    turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
+    births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
+    deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+
+#For facetting, make births and deaths long
+bd.core.birthdeath <- bd.core %>% 
+  ungroup() %>% 
+  select(region,year,`Births as percent of active firms` = births_over_active_percent_movingav,
+         `Deaths as percent of active firms` = deaths_over_active_percent_movingav,turnover_movingav) %>% 
+  pivot_longer(cols = contains("percent of active firms"), names_to = "birthsdeaths", values_to = "percent") %>% 
+  mutate(region = stringr::str_sub(region, start = 1, end=6))
+
+
+ggplot(bd.core.birthdeath %>% mutate(SBDR = grepl('barnsl|doncas|roth|sheffi',region,ignore.case=T)), 
+     aes(size = SBDR, x = year, y = percent, colour = fct_reorder(region,-turnover_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_size_manual(values = c(0.5,2)) +
+  coord_cartesian(xlim = c(2018,2021)) +
+  facet_wrap(~birthsdeaths, nrow = 1) +
+  labs(colour = 'MCA') +
+  xlab('3 year moving average, mid-year-point') +
+  guides(size = F)
+
+
+```
+
+
+
+# Maps
+
+@fig-birthdeathmap
+
+```{r, fig-birthdeathmap}
+#| label: fig-birthdeathmap
+#| fig-cap: "Births deaths"
+#| fig-height: 17
+
+birthslopes <- get_slope_and_se_safely(
+    data = bd, 
+    region,#slopes will be found within whatever grouping vars are added here
+    y = log(count_births), x = year
+    )
+  
+deathslopes <- get_slope_and_se_safely(
+    data = bd, 
+    region,#slopes will be found within whatever grouping vars are added here
+    y = log(count_deaths), x = year
+    )
+  
+bd.geo <- la22boundaries %>% 
+  rename(region = LAD22NM) %>% 
+  left_join(
+    bd,
+    by = c('region')
+  ) %>% 
+  left_join(
+    birthslopes %>% rename(`Births % change / yr (approx)` = slope, birth_se = se),
+    by = 'region'
+  ) %>% 
+  left_join(
+    deathslopes %>% rename(`Deaths % change / yr (approx)` = slope, death_se = se),
+    by = 'region'
+  )
+
+#Make slopes long so can facet
+bd.geo.long <- bd.geo %>% 
+  select(region,`Births % change / yr (approx)`,`Deaths % change / yr (approx)`) %>% 
+  pivot_longer(
+    cols = contains("approx"), names_to = "birthsdeathslopes", values_to = "approx_percent"
+  ) %>% 
+  mutate(approx_percent = approx_percent * 100)
+
+tm_shape(bd.geo.long) +
+  tm_polygons('approx_percent', n = 13, palette = "RdBu", border.alpha = 0.4, 
+              title = "Firm births\n& deaths\nApprox %\nchange/yr") +
+  tm_layout(title = '', legend.outside = T) +
+  tm_facets(by = 'birthsdeathslopes', ncol = 1) +
+  tm_shape(sy.geo) + #after facets or doesn't work
+  tm_borders(lwd = 2, col = 'black') 
+
+
+
+
+```
+
+
+@fig-firmefficiencymap
+
+```{r, fig-firmefficiencymap}
+#| label: fig-firmefficiencymap
+#| fig-cap: "Firm efficiency"
+#| fig-height: 17
+
+bd.la <- bd %>% 
+  mutate(
+  firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+  turnover = (count_births + count_deaths)/(count_active),
+  births_over_active_percent = ((count_births)/(count_active))*100,
+  deaths_over_active_percent = ((count_deaths)/(count_active))*100,
+  highgrowth_over_active_percent = ((count_highgrowth)/(count_active))*100
+) %>% 
+  group_by(region) %>% 
+  mutate(
+    #Smoothed variables
+    highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
+    #derived measures
+    firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+    turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
+    births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
+    deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA),
+    highgrowth_over_active_percent_movingav = rollapply(highgrowth_over_active_percent, 3, mean, align = 'center', fill = NA)
+  ) %>% 
+  ungroup()
+
+
+#Reduce that to get facetted plot of two timepoints for firm efficiency
+#Before doing geo-join
+bd.la.efficiency.twopoints <- bd.la %>% 
+  # select(region,code,year,firmefficency_movingav,births_over_active_percent_movingav,deaths_over_active_percent_movingav,highgrowth_movingav,firmefficency_movingav) %>% 
+  filter(year %in% c(2018,2021))#start and end points for 3 year moving av
+  
+
+
+#Change some names for usefulness
+bd.la.eff.geo <- la22boundaries %>% 
+  rename(region = LAD22NM) %>% 
+  left_join(
+    bd.la.efficiency.twopoints,
+    by = c('region')
+  ) %>% 
+  mutate(
+    year = ifelse(year == 2018, '2017-19 average', '2020-22 average')
+  )
+
+tm_shape(bd.la.eff.geo) +
+  # tm_polygons('deaths_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
+  # tm_polygons('births_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
+  # tm_polygons('turnover_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
+  # tm_polygons('highgrowth_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher', title = "") +
+  tm_polygons('firmefficency_movingav', n = 9, palette = "RdBu", border.alpha = 0.4, title = "Firm effiency\n0 = equal births/deaths\n 100 = all births\n-100 = all deaths") +
+  tm_layout(title = '', legend.outside = T) +
+  tm_facets(by = 'year', ncol = 1) +
+  tm_shape(sy.geo) + #after facets or doesn't work
+  tm_borders(lwd = 2, col = 'black') 
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r eval = F}
+#CUTTINZ
+
+#```{r, birthsdeaths_MCA_twoaxis}
+##| label: fig-birthsdeaths2axis_MCA_twoaxis
+##| fig-cap: "For MCAs: births vs deaths on separate axes as a percent of all active firms, 3 year average 2017/19 (dot) vs 2020/22 (arrow end)."
+
+#Arrows showing births and deaths against each other over time, smoothed
+
+
+#Arrow start and end points need to be on same row
+# bd.mca.wide <- bd.mca %>% 
+#   filter(year %in% c(2018,2021)) %>% 
+#   select(MCA,year,firmefficency:deaths_over_active_percent_movingav) %>% 
+#   pivot_wider(names_from = year, values_from = firmefficency:deaths_over_active_percent_movingav)
+# 
+# ggplot(
+#   bd.mca.wide %>% mutate(SY = MCA == "South Yorkshire"),
+#   aes(colour = fct_reorder(MCA,-turnover_movingav_2021))
+# ) +
+#   geom_segment(aes(size = SY, x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018 ,
+#                    xend = births_over_active_percent_movingav_2021, yend = deaths_over_active_percent_movingav_2021),
+#                arrow = arrow(length = unit(0.5, "cm"))) +
+#   # geom_segment(aes(x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018 ,
+#   #                  xend = births_over_active_percent_movingav_2021, yend = deaths_over_active_percent_movingav_2021),
+#   #              arrow = arrow(length = unit(0.5, "cm")),
+#   #              size = 1) +
+#   scale_color_brewer(palette = 'Paired') +
+#   scale_size_manual(values = c(1,3)) +
+#   geom_point(aes(x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018), size = 3) +
+#   geom_abline(slope = 1, intercept = 0) +
+#   # scale_y_log10() +
+#   # scale_x_log10() +
+#   coord_fixed() +
+#   labs(colour = 'MCA') +
+#   xlab('Births as % of all active firms') +
+#   ylab('Deaths as % of all active firms') +
+#   guides(size = F)
+
+
+
+
+
+
+# ```{r, birthsdeaths_core}
+# #| label: fig-birthsdeaths2axis_core
+# #| fig-cap: "For core cities plus BDR: births vs deaths on separate axes as a percent of all active firms, 3 year average 2017/19 (dot) vs 2020/22 (arrow end)."
+
+#And for core cities?
+# bd.core <- bd %>%
+#   # filter(corecity == 'Core city') %>% 
+#   filter(corecity == 'Core city' | grepl('barns|doncaster|rotherh',region,ignore.case=T)) %>% #version that includes other places in SY
+#   filter(!grepl('cardiff|belfast',region,ignore.case=T)) %>% 
+#   mutate(
+#     firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+#     turnover = (count_births + count_deaths)/(count_active),
+#     births_over_active_percent = ((count_births)/(count_active))*100,
+#     deaths_over_active_percent = ((count_deaths)/(count_active))*100
+#   ) %>% 
+#   group_by(region) %>% 
+#   mutate(
+#     #Smoothed variables
+#     highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
+#     #derived measures
+#     firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+#     turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
+#     births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
+#     deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
+#   ) %>% 
+#   ungroup()
+# 
+# #Arrow start and end points need to be on same row
+# bd.core.wide <- bd.core %>% 
+#   filter(year %in% c(2018,2021)) %>% 
+#   select(region,year,firmefficency:deaths_over_active_percent_movingav) %>% 
+#   pivot_wider(names_from = year, values_from = firmefficency:deaths_over_active_percent_movingav)
+# 
+# 
+# 
+# ggplot(
+#   bd.core.wide %>% mutate(SBDR = grepl('barnsley|doncast|rotherh|sheffield',region,ignore.case=T)),
+#   aes(colour = fct_reorder(region,-turnover_movingav_2021))
+# ) +
+#   geom_segment(aes(size = SBDR, x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018 ,
+#                    xend = births_over_active_percent_movingav_2021, yend = deaths_over_active_percent_movingav_2021),
+#                arrow = arrow(length = unit(0.5, "cm"))) +
+#   # geom_segment(aes(x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018 ,
+#   #                  xend = births_over_active_percent_movingav_2021, yend = deaths_over_active_percent_movingav_2021),
+#   #              arrow = arrow(length = unit(0.5, "cm")),
+#   #              size = 1) +
+#   scale_color_brewer(palette = 'Paired') +
+#   scale_size_manual(values = c(1,3)) +
+#   geom_point(aes(x = births_over_active_percent_movingav_2018, y = deaths_over_active_percent_movingav_2018), size = 3) +
+#   geom_abline(slope = 1, intercept = 0) +
+#   # scale_y_log10() +
+#   # scale_x_log10() +
+#   coord_fixed() +
+#   labs(colour = 'MCA') +
+#   xlab('Births as % of all active firms') +
+#   ylab('Deaths as % of all active firms') +
+#   guides(size = F)
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
