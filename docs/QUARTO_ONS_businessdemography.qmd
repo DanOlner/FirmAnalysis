@@ -57,30 +57,39 @@ sy.geo <- readRDS('../localdata/sygeo.rds')
 
 
 
-# Headlines
+## Headlines
 
 * **High growth firms in South Yorkshire and nationally (10+ employees and 20%+ employee growth av per year over 3 years):**
-    + Since 2017, the number and proportion of high growth firms has *dropped* almost everywher - but place's positions relative to each other have hardly changed.
-    + South Yorkshire (and Sheffield, Barnley, Doncaster + Rotherham separately) have remained at or near the bottom for proportion of high growth firms, with Rotherham in particular dropping over time. (See @fig-highgrowth-raw, @fig-highgrowth-percentoffirms10plus, @fig-highgrowth-percentoffirms10plus-cores - **hover for preview** or see below.)
+    + Since 2017, the number and proportion of high growth firms has *dropped* almost everywhere - but the position of different regions _relative to each other_ have hardly changed.
+    + South Yorkshire (and Sheffield, Barnsley, Doncaster + Rotherham separately) have remained at or near the bottom for proportion of high growth firms, with Rotherham in particular dropping over time. (See @fig-highgrowth-raw for raw MCA numbers, @fig-highgrowth-percentoffirms10plus as percent of active & @fig-highgrowth-percentoffirms10plus-cores for the 4 places - **hover for preview** or see below.)
 
 * **Business births and deaths:**
-    + Nationally, business births have outnumbered deaths in every year in this data - but **firm deaths have steadily increased in last 4 or so years.**
-    + South Yorkshire is near the top of MCAs for births as a percent of active firms - increasing over time, putting it in a higher group with West Midlands, Liverpool and Greater Manchester. SY has followed the national trend of increasing firm deaths as a percent of active firms, sitting in the middle rankings. (See @fig-birthsdeaths2axis_MCA_facet.)
-    + @fig-birthsdeaths2axis_core_facet examines the same for **core cities plus BDR**. The stand-out here is **Doncaster** with high birth and death proportions compared both to other core cities and the other three SY places. Since 2018-20, all four places **except Sheffield** have seen births *and* deaths relative to active firms *rise*. Sheffield is relatively **low for births** and, in this data, it has dropped to the **lowest birth value.** (Note: only compared to the local authorities in this short list.)
+    + Nationally, business births have outnumbered deaths in every year in this data (though with exceptions, see map below) - but **firm deaths have steadily increased in last 4 or so years.**
+    + **South Yorkshire is near the top of MCAs for births as a percent of active firms** - increasing over time, putting it in a higher group with West Midlands, Liverpool and Greater Manchester. SY has followed the national trend of increasing firm deaths as a percent of active firms, sitting in the middle rankings. (See @fig-birthsdeaths2axis_MCA_facet.)
+    + @fig-birthsdeaths2axis_core_facet examines the same for **'core cities' in England/Scotland plus Barnsley, Doncaster & Rotherham (BDR)**. The stand-out here is **Doncaster** with high birth and death proportions compared both to other core cities and BDR. Since 2018-20, all four places **except Sheffield** have seen births *and* deaths relative to active firms *rise*. Sheffield is relatively **low for births** and, in this data, it has dropped to the **lowest birth value for the 2020-22 average.** (Note: only compared to the local authorities in this short list.)
+
+## Maps
+
+* **Four maps below give an overview of the national picture**:
+    + @fig-birthdeathmap shows the **linear trend over time for firm births and deaths** nationally, expressed as % change per year (approx) with births in the top map and deaths below it (South Yorkshire overlaid in thicker black). Regional clustering is evident but - **apart from Doncaster's dropping death rate (which has been climbing again in more recent years)** - South Yorkshire doesn't stand out.
+    + @fig-highgrowthchange is a map of the linear trend for **high growth firms** - again, showing approx. percent change per year. This map confirms the story that high growth firm numbers have been consistently dropping (red) but shows that **a patchwork of places in blue have seen high growth firm increases, with no obvious pattern**. South Yorkshire fits the pattern of high growth firm decline.
+    + @fig-turnovermap shows firm 'turnover' (2020-22 average). **Turnover is a measure of churn**: births _plus_ deaths, divided by active firms. **Bands of higher turnover/churn** are present in the North, Midlands, across London and in South Wales, with **Doncaster standing out in the North** and the rest of South Yorkshire not especially low churn.
+    + @fig-firmefficiencymap shows 'firm efficiency' - a **standardised measure of the balance of births & deaths**, where values of +100 would be 'all births no deaths', -100 would be 'all deaths no births', and zero would be 'births and deaths balance / cancel out'. This map compares two time points, showing how in the latter time period (bottom map, 2020-22) there has been a **marked shift to more deaths than births in the South**.
 
 
-
-# The data used 
+## The data used
 
 * The [ONS Business Demography dataset](https://www.ons.gov.uk/businessindustryandtrade/business/activitysizeandlocation/datasets/businessdemographyreferencetable) contains counts of active firms, births, deaths, 'high growth' firms (20%+ employee growth over 3 years) and active firms with 10+ employees, from 2017 to 2022.
-* At local authority or MCA level, it does **not** break these counts down by sector (those are only at national level).
 * Here, it has been harmonised to backcast 2022 local authority borders to create a time series not present in the original data.
-* Code is [here](https://github.com/DanOlner/FirmAnalysis/blob/master/ONS_business_demography.R), quarto code for this report is [here]().
+* At local authority or MCA level, it does **not** break these counts down by sector (those are only at national level).
+* R Code is [here](https://github.com/DanOlner/FirmAnalysis/blob/master/ONS_business_demography.R), quarto code for this report is [here](https://github.com/DanOlner/FirmAnalysis/blob/master/docs/QUARTO_ONS_businessdemography.qmd).
 
 
-# The detail / plots
 
-## High growth firms
+
+## The detail / plots / maps
+
+### High growth firms
 
 Raw high growth firm numbers have been declining almost everywhere in the UK since 2017. @fig-highgrowth-raw shows raw count of high growth firms for MCAs (thicker line is South Yorkshire).
 
@@ -206,9 +215,9 @@ ggplot(core.hg.prop%>% mutate(SBDR = grepl('barnsley|doncast|rotherh|sheffield',
 ```
 
 
-## Births and deaths
+### Births and deaths
 
-Nationally, business births have outnumbered deaths in every year in this data - but **firm deaths have steadily increased in last 4 or so years.**
+Nationally, business births have outnumbered deaths in every year in this data - but **firm deaths have steadily increased in the last 4 or so years.**
 
 @fig-birthsdeaths2axis_MCA_facet shows South Yorkshire near the top of MCAs for births as a percent of active firms - increasing over time, putting it in a higher group with West Midlands, Liverpool and Greater Manchester. SY has followed the national trend of increasing firm deaths as a percent of active firms, sitting in the middle rankings. 
 
@@ -265,7 +274,7 @@ ggplot(bd.mca.birthdeath %>% mutate(SY = grepl("South Y",MCA,ignore.case=T)),
 
 ```
 
-@fig-birthsdeaths2axis_core_facet examines the same for **core cities plus BDR**. The stand-out here is **Doncaster** with high birth and death proportions compared both to other core cities and the other three SY places. Since 2018-20, all four places **except Sheffield** have seen births *and* deaths relative to active firms *rise*. Sheffield is relatively **low for births** and, in this data, it has dropped to the **lowest birth value.** (Note: only compared to the local authorities in this short list.)
+@fig-birthsdeaths2axis_core_facet examines the same for **core cities plus BDR**. The stand-out here is **Doncaster** with high birth and death proportions compared both to other core cities and the other three SY places. Since 2018-20, all four places **except Sheffield** have seen births *and* deaths relative to active firms *rise*. Sheffield is relatively **low for births** and, in this data, it has dropped to the **lowest firm death value.** (Note: only compared to the local authorities in this short list.)
 
 
 ```{r}
@@ -322,13 +331,15 @@ ggplot(bd.core.birthdeath %>% mutate(SBDR = grepl('barnsl|doncas|roth|sheffi',re
 
 
 
-# Maps
+## Maps
 
-@fig-birthdeathmap
+@fig-birthdeathmap shows the linear trends for business births (top map) and deaths (bottom) for the whole of the UK, expressed as approximate percentage change per year on average. South Yorkshire is marked with a thicker black line. 
+
+The overall pattern of births is mixed and clustered across the UK - a swathe of the South dropping more than many other places. Increases and drops in deaths also cluster.
 
 ```{r, fig-birthdeathmap}
 #| label: fig-birthdeathmap
-#| fig-cap: "Births deaths"
+#| fig-cap: "Linear trend in births (top map) and deaths (bottom map) of firms 2017-2022, expressed in approx. percent change per year"
 #| fig-height: 17
 
 birthslopes <- get_slope_and_se_safely(
@@ -380,12 +391,55 @@ tm_shape(bd.geo.long) +
 ```
 
 
-@fig-firmefficiencymap
+@fig-highgrowthchange is a map of the linear trend for **high growth firms** - again, showing approx. percent change per year. This map confirms the story that high growth firm numbers have been consistently dropping (red) but shows that **a patchwork of places in blue have seen high growth firm increases, with no obvious pattern**. South Yorkshire fits the prevalent pattern.
 
-```{r, fig-firmefficiencymap}
-#| label: fig-firmefficiencymap
-#| fig-cap: "Firm efficiency"
-#| fig-height: 17
+
+```{r, fig-highgrowthchange}
+#| label: fig-highgrowthchange
+#| fig-cap: "Linear trend in high growth firms 2017-2022, expressed in approx. percent change per year"
+#| fig-height: 9
+
+firm_slopes <- get_slope_and_se_safely(
+  data = bd, 
+  region,#slopes will be found within whatever grouping vars are added here
+  y = log(count_highgrowth), x = year)
+  
+
+#Join geo and slopes for mapping
+bd.geo <- la22boundaries %>% 
+  rename(region = LAD22NM) %>% 
+  left_join(
+    bd,
+    by = c('region')
+    ) %>% 
+  left_join(
+    firm_slopes,
+    by = 'region'
+  )
+
+tm_shape(bd.geo %>% mutate(approx_pct_change = slope * 100)) +
+  tm_polygons('approx_pct_change', n = 9, palette = "RdBu", border.alpha = 0.4) +
+  tm_layout(title = 'High growth firms\nChange over time\nApprox %/yr', legend.outside = T) +
+  tm_shape(sy.geo) + 
+  tm_borders(lwd = 2, col = 'black') 
+
+
+```
+
+
+
+
+
+
+
+
+
+@fig-turnovermap shows firm 'turnover' (2020-22 average) - a measure of churn that adds births and deaths together, and expresses those as a proportion of total active firms. **Bands of higher turnover/churn** are present in the North, Midlands, across London and in South Wales, with Doncaster standing out in the North and the rest of South Yorkshire not especially low churn.
+
+```{r, fig-turnovermap}
+#| label: fig-turnovermap
+#| fig-cap: "Turnover: births plus deaths, over count of active firms. 2020-2022 average."
+#| fig-height: 9
 
 bd.la <- bd %>% 
   mutate(
@@ -427,6 +481,31 @@ bd.la.eff.geo <- la22boundaries %>%
   mutate(
     year = ifelse(year == 2018, '2017-19 average', '2020-22 average')
   )
+
+
+#Show only one year here
+tm_shape(bd.la.eff.geo %>% filter(year == '2020-22 average')) +
+  # tm_polygons('deaths_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
+  # tm_polygons('births_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
+  tm_polygons('turnover_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher', title = "Firm turnover\n2020-22 average") +
+  # tm_polygons('highgrowth_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher', title = "") +
+  # tm_polygons('firmefficency_movingav', n = 9, palette = "RdBu", border.alpha = 0.4, title = "Firm effiency\n0 = equal births + deaths\n 1 = all births no deaths\n-1 = all deaths no births") +
+  tm_layout(title = '', legend.outside = T) +
+  # tm_facets(by = 'year') +
+  tm_shape(sy.geo) + #after facets or doesn't work
+  tm_borders(lwd = 2, col = 'black') 
+```
+
+
+
+
+@fig-firmefficiencymap shows 'firm efficiency' - the balance of births & deaths - comparing two time points. Values of +100 would be 'all births no deaths', -100 would be 'all deaths no births', and zero would be 'births and deaths balance'. This map shows how in the latter time period (2020-22) there has been a **marked shift to more deaths than births in the South** compared to earlier.
+
+```{r, fig-firmefficiencymap}
+#| label: fig-firmefficiencymap
+#| fig-cap: "Firm efficiency, comparing 2017-19 av with 2020-22 av."
+#| fig-height: 17
+
 
 tm_shape(bd.la.eff.geo) +
   # tm_polygons('deaths_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',

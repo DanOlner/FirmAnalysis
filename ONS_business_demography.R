@@ -1099,8 +1099,8 @@ firm_slopes <- get_slope_and_se_safely(
   data = bd, 
   region,#slopes will be found within whatever grouping vars are added here
   # y = log(count_births), x = year)
-  y = log(count_deaths), x = year)
-  # y = log(count_highgrowth), x = year)
+  # y = log(count_deaths), x = year)
+  y = log(count_highgrowth), x = year)
   # y = log(count_active10plus), x = year)
 
 #Tick
@@ -1232,9 +1232,9 @@ bd.la.eff.geo <- la22boundaries %>%
 tm_shape(bd.la.eff.geo) +
   # tm_polygons('deaths_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
   # tm_polygons('births_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
-  # tm_polygons('turnover_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher',
-  # tm_polygons('highgrowth_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher', title = "") +
-  tm_polygons('firmefficency_movingav', n = 9, palette = "RdBu", border.alpha = 0.4, title = "Firm effiency\n0 = equal births + deaths\n 1 = all births no deaths\n-1 = all deaths no births") +
+  # tm_polygons('turnover_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher', title = "") +
+  tm_polygons('highgrowth_over_active_percent_movingav', n = 9, palette = "Blues", border.alpha = 0.4, style = 'fisher', title = "") +
+  # tm_polygons('firmefficency_movingav', n = 9, palette = "RdBu", border.alpha = 0.4, title = "Firm effiency\n0 = equal births + deaths\n 1 = all births no deaths\n-1 = all deaths no births") +
   tm_layout(title = '', legend.outside = T) +
   tm_facets(by = 'year') +
   tm_shape(sy.geo) + #after facets or doesn't work
