@@ -982,6 +982,117 @@ ggplot(
 #Given what proportion are <10 employees or a single employee
 
 
+
+
+
+
+#Percent change each year from previous year on raw data
+#Then smoothed?
+
+#MCAs first
+bd.mca <- bd.mca %>% 
+  group_by(MCA) %>% 
+  mutate(
+    births_percentchange_yearly = ((count_births - lag(count_births))/lag(count_births)) * 100,
+    deaths_percentchange_yearly = ((count_deaths - lag(count_deaths))/lag(count_deaths)) * 100,
+    births_percentchange_yearly_movingav = rollapply(births_percentchange_yearly, 3, mean, align = 'center', fill = NA),
+    deaths_percentchange_yearly_movingav = rollapply(deaths_percentchange_yearly, 3, mean, align = 'center', fill = NA)
+  )
+
+#Look just at key cols to check that worked... tick
+bd.mca %>% select(MCA, year, count_births, count_deaths, births_percentchange_yearly, deaths_percentchange_yearly) %>% View
+
+#Check raw % change yearly numbers for MCAs
+#Stick them next to each other with a facet
+
+bd.mca.birthdeathpercentperyear <- bd.mca %>% 
+  ungroup() %>% 
+  select(MCA,year,`Births percent change from prev year` = births_percentchange_yearly,
+         `Deaths percent change from prev year` = deaths_percentchange_yearly,turnover_movingav,turnover) %>% 
+  pivot_longer(cols = contains("percent change from prev year"), names_to = "birthsdeaths_pct_prevyr", values_to = "percent") 
+  # mutate(MCA = stringr::str_sub(MCA, start = 1, end=9))
+
+ggplot(bd.mca.birthdeathpercentperyear %>% mutate(SY = grepl("South Y",MCA,ignore.case=T)), 
+       aes(size = SY, x = year, y = percent, colour = fct_reorder(MCA,-turnover))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_size_manual(values = c(0.5,2)) +
+  coord_cartesian(xlim = c(2018,2022)) +
+  facet_wrap(~birthsdeaths_pct_prevyr, nrow = 1) +
+  labs(colour = 'MCA') +
+  # xlab('3 year moving average, mid-year-point') +
+  guides(size = F)
+
+#SMOOTHED VERSION
+bd.mca.birthdeathpercentperyear <- bd.mca %>% 
+  ungroup() %>% 
+  select(MCA,year,`Births percent change from prev year (3 yr smoothed av)` = births_percentchange_yearly_movingav,
+         `Deaths percent change from prev year (3 yr smoothed av)` = deaths_percentchange_yearly_movingav,turnover_movingav,turnover) %>% 
+  pivot_longer(cols = contains("percent change from prev year"), names_to = "birthsdeaths_pct_prevyr", values_to = "percent") 
+
+
+ggplot(bd.mca.birthdeathpercentperyear %>% mutate(SY = grepl("South Y",MCA,ignore.case=T)), 
+       aes(size = SY, x = year, y = percent, colour = fct_reorder(MCA,-turnover))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_size_manual(values = c(0.5,2)) +
+  coord_cartesian(xlim = c(2019,2021)) +
+  facet_wrap(~birthsdeaths_pct_prevyr, nrow = 1) +
+  labs(colour = 'MCA') +
+  # xlab('3 year moving average, mid-year-point') +
+  guides(size = F) +
+  geom_hline(yintercept = 0)
+
+
+
+
+
+
+#PPT DIFFERENCE IN PERCENT CHANGE FROM PREV YEAR FOR BIRTHS DEATHS
+bd.mca <- bd.mca %>% 
+  mutate(
+    ppt_diff = births_percentchange_yearly - deaths_percentchange_yearly
+  ) %>% 
+  group_by(MCA) %>% 
+  mutate(
+    ppt_diff_movingav = rollapply(ppt_diff, 3, mean, align = 'center', fill = NA) 
+  )
+
+#Raw ppt diff
+ggplot(bd.mca %>% mutate(SY = grepl("South Y",MCA,ignore.case=T)), 
+       aes(size = SY, x = year, y = ppt_diff, colour = fct_reorder(MCA,-ppt_diff))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_size_manual(values = c(0.5,2)) +
+  coord_cartesian(xlim = c(2018,2022)) +
+  # facet_wrap(~birthsdeaths_pct_prevyr, nrow = 1) +
+  labs(colour = 'MCA') +
+  # xlab('3 year moving average, mid-year-point') +
+  ylab('ppt difference, births-deaths percent ch from prev yr') +
+  guides(size = F) +
+  geom_hline(yintercept = 0)
+
+#Smoothed
+ggplot(bd.mca %>% mutate(SY = grepl("South Y",MCA,ignore.case=T)), 
+       aes(size = SY, x = year, y = ppt_diff_movingav, colour = fct_reorder(MCA,-ppt_diff_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  scale_size_manual(values = c(0.5,2)) +
+  coord_cartesian(xlim = c(2019,2021)) +
+  # facet_wrap(~birthsdeaths_pct_prevyr, nrow = 1) +
+  labs(colour = 'MCA') +
+  ylab('ppt difference, births-deaths percent ch from prev yr (3 yr smoothed') +
+  # xlab('3 year moving average, mid-year-point') +
+  guides(size = F) +
+  geom_hline(yintercept = 0)
+
+
+
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Get population denominator(s)----
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
