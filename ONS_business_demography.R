@@ -1024,6 +1024,24 @@ ggplot(bd.mca.birthdeathpercentperyear %>% mutate(SY = grepl("South Y",MCA,ignor
   # xlab('3 year moving average, mid-year-point') +
   guides(size = F)
 
+
+#Stick SY on same chart, ignore rest
+ggplot(bd.mca.birthdeathpercentperyear %>% filter(MCA == "South Yorkshire"), 
+       aes(x = year, y = percent, colour = birthsdeaths_pct_prevyr)) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2018,2022)) +
+  labs(colour = 'SY births/deaths % chg prev year') +
+  guides(size = F) +
+  geom_hline(yintercept = 0)
+
+
+#What's cumulative percent change of births / deaths for SY for whole data period?
+
+
+
+
 #SMOOTHED VERSION
 bd.mca.birthdeathpercentperyear <- bd.mca %>% 
   ungroup() %>% 
@@ -1045,7 +1063,16 @@ ggplot(bd.mca.birthdeathpercentperyear %>% mutate(SY = grepl("South Y",MCA,ignor
   guides(size = F) +
   geom_hline(yintercept = 0)
 
-
+#Stick SY on same chart, ignore rest
+ggplot(bd.mca.birthdeathpercentperyear %>% filter(MCA == "South Yorkshire"), 
+       aes(x = year, y = percent, colour = birthsdeaths_pct_prevyr)) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  coord_cartesian(xlim = c(2019,2021)) +
+  labs(colour = 'SY births/deaths % chg prev year') +
+  guides(size = F) +
+  geom_hline(yintercept = 0)
 
 
 
