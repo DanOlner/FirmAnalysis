@@ -542,8 +542,8 @@ fame.geo %>%
 #E.g. construction is top if just counting firms with any number of employees
 fame.geo %>%
   st_set_geometry(NULL) %>%
-  filter(employees > 1000) %>% 
-  # filter(!is.na(employees)) %>% 
+  filter(employees > 9) %>%
+  # filter(!is.na(employees)) %>%
   mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)}) %>% 
   group_by(SIC_5DIGIT_NAME) %>% 
   summarise(
@@ -574,7 +574,7 @@ fame.geo %>%
 #How many firms is that, can see plz?
 fame.geo %>%
   st_set_geometry(NULL) %>%
-  filter(!is.na(SIC_SECTION_NAME), employees > 1000) %>% 
+  filter(!is.na(SIC_SECTION_NAME), employees > 9) %>% 
   mutate_if(is.character, function(x) {Encoding(x) <- 'latin1'; return(x)}) %>% 
   mutate(SIC_5DIGIT_CODE = substr(SIC_5DIGIT_NAME,1,5)) %>% 
   count(SIC_SECTION_NAME,SIC_3DIGIT_NAME,SIC_5DIGIT_NAME, wt = employees) %>% 
