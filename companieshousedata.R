@@ -136,13 +136,10 @@ ch.geo <- ch %>%
 #Save to look at in QGIS... yep all looking great
 st_write(ch.geo, 'localdata/QGIS/companieshouse_southyorkshire_geo.shp')
 
+#Save as RDS for use elsewhere via github
+saveRDS(ch.geo,'data/companieshouse_southyorkshire_geopoints.rds')
 
 
-
-#Let's actually check what we've got map-wise
-#Get SY ITL2
-sy.itl2 <- st_read('../RegionalEcons_web/data/ITL_geographies/International_Territorial_Level_2_January_2021_UK_BFE_V2_2022_-4735199360818908762/ITL2_JAN_2021_UK_BFE_V2.shp') %>% 
-  filter(ITL221NM == 'South Yorkshire')
 
 
 
