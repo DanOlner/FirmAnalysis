@@ -158,38 +158,38 @@ ch.geo <- readRDS('data/companieshouse_southyorkshire_geopoints.rds')
 #"Data is only available for electronically filed accounts, which currently stands at about 75% of the 2.2 million accounts we expect to be filed each year."
 
 # Load a file I know has got employee counts in
-doc <- read_xml("localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_00056710_20240430.html")
-
-doc <- read_xml("localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_14688350_20240331.html")
-
-# Extract company name
-company_name <- xml_text(xml_find_first(doc, "//ix:nonNumeric[@name='bus:EntityCurrentLegalOrRegisteredName']"))
-company_name <- xml_text(xml_find_first(doc, "//ix:nonNumeric[@name='frs-bus:EntityCurrentLegalOrRegisteredName']"))
-
-#Testing contains method for matching various
-company_name <- xml_text(
-  xml_find_first(
-    doc,
-    "//ix:nonNumeric[contains(@name, 'EntityCurrentLegalOrRegisteredName')]",
-    ns = c(ix = "http://www.xbrl.org/2013/inlineXBRL")
-  )
-)
-
-
-# Extract employee numbers for 2024 and 2023
-employees_2024 <- xml_text(xml_find_first(doc, "//ix:nonFraction[@name='core:AverageNumberEmployeesDuringPeriod' and @contextRef='D0']"))
-employees_2023 <- xml_text(xml_find_first(doc, "//ix:nonFraction[@name='core:AverageNumberEmployeesDuringPeriod' and @contextRef='D11']"))
-
-print(paste("Company:", company_name, "| Employees (2024):", employees_2024, "| Employees (2023):", employees_2023))
-
-
-#Test function version... tick
-debugonce(get_accounts_employeenumber)
-get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_00056710_20240430.html')
-
-get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_14688350_20240331.html')
-
-get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_02641794_20240630.html')
+# doc <- read_xml("localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_00056710_20240430.html")
+# 
+# doc <- read_xml("localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_14688350_20240331.html")
+# 
+# # Extract company name
+# company_name <- xml_text(xml_find_first(doc, "//ix:nonNumeric[@name='bus:EntityCurrentLegalOrRegisteredName']"))
+# company_name <- xml_text(xml_find_first(doc, "//ix:nonNumeric[@name='frs-bus:EntityCurrentLegalOrRegisteredName']"))
+# 
+# #Testing contains method for matching various
+# company_name <- xml_text(
+#   xml_find_first(
+#     doc,
+#     "//ix:nonNumeric[contains(@name, 'EntityCurrentLegalOrRegisteredName')]",
+#     ns = c(ix = "http://www.xbrl.org/2013/inlineXBRL")
+#   )
+# )
+# 
+# 
+# # Extract employee numbers for 2024 and 2023
+# employees_2024 <- xml_text(xml_find_first(doc, "//ix:nonFraction[@name='core:AverageNumberEmployeesDuringPeriod' and @contextRef='D0']"))
+# employees_2023 <- xml_text(xml_find_first(doc, "//ix:nonFraction[@name='core:AverageNumberEmployeesDuringPeriod' and @contextRef='D11']"))
+# 
+# print(paste("Company:", company_name, "| Employees (2024):", employees_2024, "| Employees (2023):", employees_2023))
+# 
+# 
+# #Test function version... tick
+# debugonce(get_accounts_employeenumber)
+# get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_00056710_20240430.html')
+# 
+# get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_14688350_20240331.html')
+# 
+# get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_02641794_20240630.html')
 
 
 
@@ -262,7 +262,7 @@ View(employee.numbers %>% filter(dormantstatus == 'false'))
 #192K entries in a month ... err now somehow gone up to 359K on a second run
 #Think OS must still have been indexing?
 #Stored locally only
-accounts <- list.files("~/localdata/Accounts_Monthly_Data-September2024",'*.html', full.names = T) %>%
+accounts <- list.files("~/localdata/monthly_companieshouse_accounts/Accounts_Monthly_Data-September2024",'*.html', full.names = T) %>%
   as_tibble() %>%
   rename(filelocation = value)
 
@@ -298,6 +298,158 @@ employee.numbers %>% filter(dormantstatus == 'false') %>% View
 
 
 
+
+
+
+
+## Work on bulk account downloading for processing all accounts for the last year----
+
+#Which in theory should give us all live accounts given yearly submission necessary, but let's see
+
+# Load the HTML file
+doc <- read_html("https://download.companieshouse.gov.uk/en_monthlyaccountsdata.html")
+
+# Extract all <a> tags with hrefs containing "Accounts_Monthly_Data"
+zip_links <- xml_attr(
+  xml_find_all(doc, "//a[contains(@href, 'Accounts_Monthly_Data') and contains(@href, '.zip')]"),
+  "href"
+)
+
+#CHECK IF ANY EXISTING FOLDERS ALREADY DOWNLOADED, ONLY GET NEW ONES
+existing_folders <- list.dirs('~/localdata/monthly_companieshouse_accounts', full.names = F)
+
+#These folders are already present and unzipped
+# zip_links[!gsub('.zip','',zip_links) %in% existing_folders]
+
+#These are the ones to keep and download
+# zip_links[!gsub('.zip','',zip_links) %in% existing_folders]
+
+zip_links <- zip_links[!gsub('.zip','',zip_links) %in% existing_folders]
+
+#Append those to the web URL for download
+zip_links_urls <- paste0('https://download.companieshouse.gov.uk/', zip_links)
+
+# Define the folder to save the ZIP files
+output_folder <- "~/localdata/monthly_companieshouse_accounts"
+
+# Set the full path to save the file
+file_path <- file.path(output_folder, zip_links)
+
+
+
+
+#Download before unzipping
+#THIS IS GOING TO TAKE SOME HOURS ON FIRST RUN!
+for(i in 1:length(zip_links)){
+  
+  cat('Starting',i,'out of',length(zip_links),', file:',file_path[i],'\n')
+
+  x <- Sys.time()
+  
+  #Download a single file - several GB
+  tryCatch({
+    download.file(zip_links_urls[i], file_path[i], mode = "wb")  # Binary mode for ZIP files
+    message(paste("Downloaded"))
+  }, error = function(e) {
+    message(paste("Failed to download", "Error:", e$message))
+  })
+  
+  print(Sys.time()-x)
+  
+  print("Unzipping...")
+  
+  unzip(paste0(output_folder,'/',zip_links[i]),exdir=paste0(output_folder,'/',gsub('.zip','',zip_links[i])))
+  
+  cat('Finished everything for',i,'out of',length(zip_links),', file:',file_path[i],'\n')
+  print(Sys.time()-x)
+
+}
+
+
+#Test download with smaller daily file
+# tryCatch({
+#   download.file("https://download.companieshouse.gov.uk/Accounts_Bulk_Data-2024-11-16.zip", paste0(output_folder,'/test.zip'), mode = "wb")  # Binary mode for ZIP files
+#   message(paste("Downloaded:", file_name))
+# }, error = function(e) {
+#   message(paste("Failed to download:", file_name, "Error:", e$message))
+# })
+# 
+# unzip(paste0(output_folder,'/test.zip'),exdir=paste0(output_folder,'/test'))
+
+
+
+
+
+
+
+
+## Examine all iXBRL tags in a particular doc to see what we've got----
+
+#Gripple as example
+doc <- read_xml("~/localdata/monthly_companieshouse_accounts/Accounts_Monthly_Data-September2024/Prod224_2476_01772901_20231231.html")
+
+# Define namespaces dynamically
+ns <- xml_ns(doc)
+
+# Extract all <ix:nonNumeric> and <ix:nonFraction> tags
+non_numeric_nodes <- xml_find_all(doc, "//ix:nonNumeric", ns = ns)
+non_fraction_nodes <- xml_find_all(doc, "//ix:nonFraction", ns = ns)
+
+# Combine the text content of these nodes into a single vector
+all_tags <- c(
+  xml_text(non_numeric_nodes),
+  xml_text(non_fraction_nodes)
+)
+
+# Print the resulting vector
+print(all_tags)
+
+# Optional: To inspect the corresponding tag names and attributes
+all_tags_with_names <- c(
+  paste("Tag Name:", xml_name(non_numeric_nodes), "Value:", xml_text(non_numeric_nodes)),
+  paste("Tag Name:", xml_name(non_fraction_nodes), "Value:", xml_text(non_fraction_nodes))
+)
+
+print(all_tags_with_names)
+
+
+
+#See what the names of the tags are, matched against values
+#TODO: search several accounts, look for what frequencies we get for different iXBRL tags
+doc <- read_xml("~/localdata/monthly_companieshouse_accounts/Accounts_Monthly_Data-September2024/Prod224_2476_01772901_20231231.html")
+
+# Define namespaces dynamically
+ns <- xml_ns(doc)
+
+# Extract all <ix:nonNumeric> and <ix:nonFraction> nodes
+non_numeric_nodes <- xml_find_all(doc, "//ix:nonNumeric", ns = ns)
+non_fraction_nodes <- xml_find_all(doc, "//ix:nonFraction", ns = ns)
+
+# Extract the 'name' attribute from these nodes
+non_numeric_names <- xml_attr(non_numeric_nodes, "name")
+non_fraction_names <- xml_attr(non_fraction_nodes, "name")
+
+# Combine into a single vector
+all_names <- c(non_numeric_names, non_fraction_names)
+
+# Remove any NA values (nodes without a 'name' attribute)
+all_names <- all_names[!is.na(all_names)]
+
+# Print the resulting vector of names
+print(all_names)
+
+# Optional: Combine names with their text content for detailed inspection
+all_details <- c(
+  paste("Name:", non_numeric_names, "Value:", xml_text(non_numeric_nodes)),
+  paste("Name:", non_fraction_names, "Value:", xml_text(non_fraction_nodes))
+)
+
+# Remove entries where the name is NA
+all_details <- all_details[!is.na(all_names)]
+
+print(all_details)
+
+all_details[grepl('profit',all_details,ignore.case = T)]
 
 
 

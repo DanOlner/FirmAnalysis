@@ -377,8 +377,6 @@ dormant <- xml_text(
 )
 
 
-
-
 #Get any employee values (max two per account submitted - this and last year - and a lot with just one year)
 employeevals <- xml_text(
   xml_find_all(
