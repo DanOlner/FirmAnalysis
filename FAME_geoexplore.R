@@ -270,11 +270,23 @@ unique(fame.geo$SIC_SECTION_NAME)
 sectorx = "Manufacturing"
 sectory = "Information and communication"
 
-df <- rbind(
-  fame.geo %>% filter(SIC_SECTION_NAME==sectorx),
-  fame.geo %>% filter(SIC_SECTION_NAME==sectory)
-) %>% 
+# df <- rbind(
+#   fame.geo %>% filter(SIC_SECTION_NAME==sectorx),
+#   fame.geo %>% filter(SIC_SECTION_NAME==sectory)
+# ) %>% 
+#   filter(!is.na(employees)) %>% 
+#   cbind(st_coordinates(.)) %>% 
+#   st_set_geometry(NULL) %>% 
+#   select(
+#     PointType = SIC_SECTION_NAME,
+#     PointWeight = employees,
+#     X,Y
+#   )
+
+#Keep all sectors - need those for N
+df <- fame.geo %>% 
   filter(!is.na(employees)) %>% 
+  # filter(!is.na(employees),SIC_SECTION_NAME %in% c(sectorx,sectory)) %>% 
   cbind(st_coordinates(.)) %>% 
   st_set_geometry(NULL) %>% 
   select(
@@ -314,7 +326,7 @@ autoplot(
 #Note, it's not symmeterical, which I would have thought it would be...
 #But no, it comparing to whole area?
 
-#Test with even weights
+#Test with even weights 
 pp$marks$PointWeight <- 1
 
 x <- Sys.time()
@@ -325,7 +337,7 @@ Envelope <- MEnvelope(
   NumberOfSimulations = 1000,
   Alpha = 0.05, 
   ReferenceType = sectorx, 
-  NeighborType = sectory, #"equal to the reference type by default to caculate univariate M"
+  NeighborType = sectory, #"equal to the reference type by default to calculate univariate M"
   SimulationType = "RandomLabeling", 
   Global = TRUE
 )

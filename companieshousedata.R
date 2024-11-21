@@ -184,12 +184,12 @@ ch.geo <- readRDS('data/companieshouse_southyorkshire_geopoints.rds')
 # 
 # 
 # #Test function version... tick
-# debugonce(get_accounts_employeenumber)
-# get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_00056710_20240430.html')
+# debugonce(get_accounts_data)
+# get_accounts_data('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_00056710_20240430.html')
 # 
-# get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_14688350_20240331.html')
+# get_accounts_data('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_14688350_20240331.html')
 # 
-# get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_02641794_20240630.html')
+# get_accounts_data('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_02641794_20240630.html')
 
 
 
@@ -222,7 +222,7 @@ ch.geo %>% filter(CompanyNumber %in% accounts$companynumber) %>% View
 
 #Test how many of these we can extract employee number from. Function that up.
 #Just for South Yorkshire for now
-employee.numbers <- map(accounts$filelocation[accounts$companynumber %in% ch.geo$CompanyNumber],get_accounts_employeenumber, .progress = T) %>% bind_rows
+employee.numbers <- map(accounts$filelocation[accounts$companynumber %in% ch.geo$CompanyNumber],get_accounts_data, .progress = T) %>% bind_rows
 
 #Add back in company numbers
 employee.numbers$companynumber <- accounts$companynumber[accounts$companynumber %in% ch.geo$CompanyNumber]
@@ -282,7 +282,7 @@ table(accounts$companynumber %in% ch.geo$CompanyNumber)
 # ch.geo %>% filter(CompanyNumber %in% accounts$companynumber) %>% View
 
 #Extract employee numbers from accounts files
-employee.numbers <- map(accounts$filelocation[accounts$companynumber %in% ch.geo$CompanyNumber],get_accounts_employeenumber, .progress = T) %>% bind_rows
+employee.numbers <- map(accounts$filelocation[accounts$companynumber %in% ch.geo$CompanyNumber],get_accounts_data, .progress = T) %>% bind_rows
 
 #Add back in company numbers
 employee.numbers$companynumber <- accounts$companynumber[accounts$companynumber %in% ch.geo$CompanyNumber]
@@ -297,6 +297,34 @@ employee.numbers %>% filter(dormantstatus == 'false') %>% View
 
 
 
+#Test version extracting straight from zip file rather than unzipping first
+zip_contents <- unzip("~/localdata/monthly_companieshouse_accounts/Accounts_Monthly_Data-September2023.zip", list = TRUE)
+
+accounts <- zip_contents %>% 
+  mutate(
+    companynumber = str_split(Name, "_", simplify = TRUE)[, 3]
+  ) 
+
+#A LOT slower, but not stupidly so and a lot more HD-sane
+#Bear in mind this is just for SY though - national would be something else, probably better to do on unzipped files and slice up differently
+employee.numbers <- 
+  map(accounts$Name[accounts$companynumber %in% ch.geo$CompanyNumber],
+      get_accounts_data,
+      ziplocation = '~/localdata/monthly_companieshouse_accounts/Accounts_Monthly_Data-September2023.zip',
+      .progress = T) %>% bind_rows
+
+#Add back in company numbers
+employee.numbers$companynumber <- accounts$companynumber[accounts$companynumber %in% ch.geo$CompanyNumber]
+
+#Check what proportion of firms we got employees for here... 99%, bonza
+table(!is.na(employee.numbers$Employees_thisyear[employee.numbers$dormantstatus=='false'])) %>% prop.table
+
+employee.numbers %>% filter(dormantstatus == 'false') %>% View
+
+
+
+
+
 
 
 
@@ -305,6 +333,17 @@ employee.numbers %>% filter(dormantstatus == 'false') %>% View
 ## Work on bulk account downloading for processing all accounts for the last year----
 
 #Which in theory should give us all live accounts given yearly submission necessary, but let's see
+
+#First - test whether I actually need to unzip to access the individual files
+#Might be easier to avoid
+#Use list arg to just get names... wow, fast
+zip_contents <- unzip("~/localdata/monthly_companieshouse_accounts/Accounts_Monthly_Data-September2023.zip", list = TRUE)
+
+#Test getting one file read int read_xml... tick
+doc <- read_xml(unz("~/localdata/monthly_companieshouse_accounts/Accounts_Monthly_Data-September2023.zip", zip_contents$Name[1]))
+
+
+
 
 # Load the HTML file
 doc <- read_html("https://download.companieshouse.gov.uk/en_monthlyaccountsdata.html")
@@ -316,7 +355,8 @@ zip_links <- xml_attr(
 )
 
 #CHECK IF ANY EXISTING FOLDERS ALREADY DOWNLOADED, ONLY GET NEW ONES
-existing_folders <- list.dirs('~/localdata/monthly_companieshouse_accounts', full.names = F)
+# existing_folders <- list.dirs('~/localdata/monthly_companieshouse_accounts', full.names = F)
+existing_zips <- list.files('~/localdata/monthly_companieshouse_accounts', full.names = F)
 
 #These folders are already present and unzipped
 # zip_links[!gsub('.zip','',zip_links) %in% existing_folders]
@@ -324,7 +364,10 @@ existing_folders <- list.dirs('~/localdata/monthly_companieshouse_accounts', ful
 #These are the ones to keep and download
 # zip_links[!gsub('.zip','',zip_links) %in% existing_folders]
 
-zip_links <- zip_links[!gsub('.zip','',zip_links) %in% existing_folders]
+# zip_links <- zip_links[!gsub('.zip','',zip_links) %in% existing_folders]
+
+#Testing for zips
+zip_links <- zip_links[!zip_links %in% existing_zips]
 
 #Append those to the web URL for download
 zip_links_urls <- paste0('https://download.companieshouse.gov.uk/', zip_links)
@@ -338,8 +381,20 @@ file_path <- file.path(output_folder, zip_links)
 
 
 
-#Download before unzipping
+#Download...
+#Not unzipping - pulling files directly from the zips to save on disk space (slower but more efficient for HD)
 #THIS IS GOING TO TAKE SOME HOURS ON FIRST RUN!
+
+# Create a handle with custom options
+# handle <- curl::new_handle()
+# curl::handle_setopt(handle, timeout = 0)  # Set timeout to 0 (infinite)
+
+# Download the file using the handle
+# curl_download("https://example.com/file.zip", "file.zip", handle = handle)
+
+#Set global timeout to very big indeed
+options(timeout = 36000)#ten hours per file, belt and braces!
+
 for(i in 1:length(zip_links)){
   
   cat('Starting',i,'out of',length(zip_links),', file:',file_path[i],'\n')
@@ -348,7 +403,13 @@ for(i in 1:length(zip_links)){
   
   #Download a single file - several GB
   tryCatch({
+    
     download.file(zip_links_urls[i], file_path[i], mode = "wb")  # Binary mode for ZIP files
+    
+    # httr::GET(zip_links_urls[i], write_disk(file_path[i]), timeout(Inf))  # No timeout
+    
+    # curl::curl_download(zip_links_urls[i], file_path[i], handle = handle)
+    
     message(paste("Downloaded"))
   }, error = function(e) {
     message(paste("Failed to download", "Error:", e$message))
@@ -356,9 +417,9 @@ for(i in 1:length(zip_links)){
   
   print(Sys.time()-x)
   
-  print("Unzipping...")
+  # print("Unzipping...")
   
-  unzip(paste0(output_folder,'/',zip_links[i]),exdir=paste0(output_folder,'/',gsub('.zip','',zip_links[i])))
+  # unzip(paste0(output_folder,'/',zip_links[i]),exdir=paste0(output_folder,'/',gsub('.zip','',zip_links[i])))
   
   cat('Finished everything for',i,'out of',length(zip_links),', file:',file_path[i],'\n')
   print(Sys.time()-x)
@@ -375,6 +436,63 @@ for(i in 1:length(zip_links)){
 # })
 # 
 # unzip(paste0(output_folder,'/test.zip'),exdir=paste0(output_folder,'/test'))
+
+
+
+
+
+
+#QUICK AND DIRTY GRAB OF ALL EMPLOYEE NUMBER / DORMANT DETAILS FOR THE LAST YEAR FOR SOUTH YORKSHIRE----
+
+#So I can get on with playing with it. Mull deeper / further processing as we go
+
+#Get all zip file locations
+#Run each
+#Extract then save, can combine after running
+
+allzips <- list.files('~/localdata/monthly_companieshouse_accounts', '*.zip', full.names = T)
+
+# results <- list()
+
+for(zipname in allzips){
+  
+  x <- Sys.time()
+  
+  #Test version extracting straight from zip file rather than unzipping first
+  zip_contents <- unzip(zipname, list = TRUE)
+  
+  accounts <- zip_contents %>% 
+    mutate(
+      companynumber = str_split(Name, "_", simplify = TRUE)[, 3]
+    ) 
+  
+  #Get just for SOUTH YORKSHIRE
+  #A LOT slower, but not stupidly so and a lot more HD-sane
+  #Bear in mind this is just for SY though - national would be something else, probably better to do on unzipped files and slice up differently
+  employee.numbers <- 
+    map(accounts$Name[accounts$companynumber %in% ch.geo$CompanyNumber],
+        get_accounts_data,
+        ziplocation = zipname,
+        .progress = T) %>% bind_rows
+  
+  #Add back in company numbers
+  employee.numbers$companynumber <- accounts$companynumber[accounts$companynumber %in% ch.geo$CompanyNumber]
+  
+  #store
+  # results[[length(results)+1]] <- employee.numbers
+  
+  saveRDS(employee.numbers,paste0('localdata/SouthYorkshire_accounts_saves/',gsub('.zip','',basename(zipname)),'_SY.rds'))
+  
+  print(paste0('Done ',zipname))
+  print(Sys.time() - x)
+
+}
+
+#bind later, save for now!
+# saveRDS(results)
+
+
+
 
 
 
