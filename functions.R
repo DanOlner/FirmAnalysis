@@ -4,6 +4,7 @@ library(sf)
 library(parallel)
 library(httr)
 library(jsonlite)
+library(xml2)
 
 #Helper functions
 g <- function(x) glimpse(x)
@@ -347,6 +348,53 @@ get_slope_and_se_safely <- function(data, ..., y, x) {
 
 
 
+#READ COMPANIES HOUSE ACCOUNTS FILE AND EXTRACT EMPLOYEE NUMBERS FOR WHATEVER YEARS WE CAN GET (OFTEN 2)
+get_accounts_employeenumber <- function(filename){
 
+doc <- xml2::read_xml(filename)
+
+# Dynamically extract all namespaces
+ns <- xml_ns(doc)
+
+#//ix:nonNumeric[contains(@name, 'EntityCurrentLegalOrRegisteredName')] matches any <ix:nonNumeric> tag where the name attribute contains EntityCurrentLegalOrRegisteredName
+company_name <- xml_text(
+  xml_find_first(
+    doc,
+    "//ix:nonNumeric[contains(@name, 'EntityCurrentLegalOrRegisteredName')]",
+    # ns = c(ix = "http://www.xbrl.org/2013/inlineXBRL")
+    ns = ns
+  )
+)
+
+
+#Is company dormant?
+dormant <- xml_text(
+  xml_find_first(
+    doc,
+    "//ix:nonNumeric[contains(@name, 'EntityDormantTruefalse')]",
+    ns = ns
+  )
+)
+
+
+
+
+#Get any employee values (max two per account submitted - this and last year - and a lot with just one year)
+employeevals <- xml_text(
+  xml_find_all(
+    doc,
+      "//ix:nonFraction[contains(@name, 'AverageNumberEmployeesDuringPeriod')]",
+    ns = ns
+  )
+)
+
+# Extract employee numbers for 2024 and 2023
+# employees_2024 <- xml2::xml_text(xml2::xml_find_first(doc, "//ix:nonFraction[@name='core:AverageNumberEmployeesDuringPeriod' and @contextRef='D0']"))
+# employees_2023 <- xml2::xml_text(xml2::xml_find_first(doc, "//ix:nonFraction[@name='core:AverageNumberEmployeesDuringPeriod' and @contextRef='D11']"))
+
+#Need to check it's getting the correct year order if more than one employee count
+return(list(Company = company_name, dormantstatus = dormant, Employees_thisyear = as.numeric(employeevals[1]), Employees_lastyear = as.numeric(employeevals[2])))
+
+}
 
 

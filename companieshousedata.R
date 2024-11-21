@@ -4,9 +4,13 @@
 library(tidyverse)
 library(sf)
 library(pryr)
+library(xml2)
+source('functions.R')
 #library(data.table)
 
-#LOAD----
+# 1. COMPANIES HOUSE FULL UK COMPANIES LIST
+
+## LOAD----
 
 # ch <- read_csv('localdata/BasicCompanyDataAsOneFile-2024-11-01.csv')
 # 
@@ -35,7 +39,7 @@ ch %>% filter(!is.na(RegAddress.PostCode)) %>% slice_sample(n = 100) %>% View
 
 
 
-#USE POSTCODE LOOKUP TO FILTER DOWN TO SOUTH YORKSHIRE----
+## USE POSTCODE LOOKUP TO FILTER DOWN TO SOUTH YORKSHIRE----
 
 #NOTE: USING LATEST CODEPOINT OPEN INSTEAD, SEE BELOW
 #BETTER MATCH
@@ -139,9 +143,157 @@ st_write(ch.geo, 'localdata/QGIS/companieshouse_southyorkshire_geo.shp')
 #Save as RDS for use elsewhere via github
 saveRDS(ch.geo,'data/companieshouse_southyorkshire_geopoints.rds')
 
+ch.geo <- readRDS('data/companieshouse_southyorkshire_geopoints.rds')
 
 
 
+
+# 2. EXTRACTING FROM COMPANIES HOUSE ACCOUNTS FILES----
+
+## Start by testing with a single one. Using iXBRL format----
+
+#Downloaded entire accounts files, cos scraping would take longer (though that might be an option too)
+#Via here: https://download.companieshouse.gov.uk/en_accountsdata.html
+#Each file is monthly accounts
+#"Data is only available for electronically filed accounts, which currently stands at about 75% of the 2.2 million accounts we expect to be filed each year."
+
+# Load a file I know has got employee counts in
+doc <- read_xml("localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_00056710_20240430.html")
+
+doc <- read_xml("localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_14688350_20240331.html")
+
+# Extract company name
+company_name <- xml_text(xml_find_first(doc, "//ix:nonNumeric[@name='bus:EntityCurrentLegalOrRegisteredName']"))
+company_name <- xml_text(xml_find_first(doc, "//ix:nonNumeric[@name='frs-bus:EntityCurrentLegalOrRegisteredName']"))
+
+#Testing contains method for matching various
+company_name <- xml_text(
+  xml_find_first(
+    doc,
+    "//ix:nonNumeric[contains(@name, 'EntityCurrentLegalOrRegisteredName')]",
+    ns = c(ix = "http://www.xbrl.org/2013/inlineXBRL")
+  )
+)
+
+
+# Extract employee numbers for 2024 and 2023
+employees_2024 <- xml_text(xml_find_first(doc, "//ix:nonFraction[@name='core:AverageNumberEmployeesDuringPeriod' and @contextRef='D0']"))
+employees_2023 <- xml_text(xml_find_first(doc, "//ix:nonFraction[@name='core:AverageNumberEmployeesDuringPeriod' and @contextRef='D11']"))
+
+print(paste("Company:", company_name, "| Employees (2024):", employees_2024, "| Employees (2023):", employees_2023))
+
+
+#Test function version... tick
+debugonce(get_accounts_employeenumber)
+get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_00056710_20240430.html')
+
+get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_14688350_20240331.html')
+
+get_accounts_employeenumber('localdata/Accounts_Bulk_Data-2024-11-19/Prod223_3832_02641794_20240630.html')
+
+
+
+  #OK, now check match of accounts versus SY businesses
+#(Can check against all UK businesses later)
+
+#File names have company number and then filing date
+#Can separate thus
+#This is the latest, only 16K account filings
+accounts <- list.files("~/localdata/Accounts_Bulk_Data-2024-11-19",'*.html', full.names = T) %>%
+  as_tibble() %>%
+  rename(filelocation = value)
+
+#Add on shorter filename for ease of processing, extract company number
+accounts <- accounts %>% 
+  mutate(
+    value = basename(filelocation),#pull out just short final name
+    companynumber = str_split(value, "_", simplify = TRUE)[, 3]
+  ) %>% 
+  select(-value)
+
+
+#OK, check if any accounts matches this month in SY
+table(accounts$companynumber %in% ch.geo$CompanyNumber)
+
+#Yes - let's just view those
+ch.geo %>% filter(CompanyNumber %in% accounts$companynumber) %>% View
+
+
+
+#Test how many of these we can extract employee number from. Function that up.
+#Just for South Yorkshire for now
+employee.numbers <- map(accounts$filelocation[accounts$companynumber %in% ch.geo$CompanyNumber],get_accounts_employeenumber, .progress = T) %>% bind_rows
+
+#Add back in company numbers
+employee.numbers$companynumber <- accounts$companynumber[accounts$companynumber %in% ch.geo$CompanyNumber]
+
+
+#Check on those not being picked up - what's happening with those accounts?
+#Example: 02641794
+#OK, fixed that - we now have all firm names being extracted
+#Some still with NA employee number - let's just check the originals don't have them
+#E.g. 02309294 "LJT Motors Limited"... yep no employee values
+#Or 14771941 "ARCHERS INVESTMENT COMPANY LIMITED"... "Dormant accounts"
+#For which there's an xml field, so let's try and get that... ah there's a lot of dormant companies, OK
+#https://www.yourcompanyformations.co.uk/blog/dormant-company-explained/
+
+#remaining ones without employee counts, the script has been scrambled and is unreadable 
+#But note: we're getting MUCH higher positive values than FAME has (which is about 50%)
+#Look:
+table(!is.na(employee.numbers$Employees_thisyear[employee.numbers$dormantstatus=='false'])) %>% prop.table
+
+
+#The issue might be the ~25% who don't file electronic accounts, among other things
+
+#Just check with a few samples that the order of employee year is correct
+#Pick to look at...
+#OK LOOKING GOOD
+View(employee.numbers %>% filter(dormantstatus == 'false'))
+#10634903 UK200: tick
+#09038383 Quando: tick
+#09735145 pet repair: tick
+#05880174 H & E Electrical Services Limited: tick
+#08421033 Mexborough mini market: tick
+
+
+
+#REPEAT FOR SEPTEMBER 2024 MONTHLY DATA
+#To check computational demand etc
+#192K entries in a month ... err now somehow gone up to 359K on a second run
+#Think OS must still have been indexing?
+#Stored locally only
+accounts <- list.files("~/localdata/Accounts_Monthly_Data-September2024",'*.html', full.names = T) %>%
+  as_tibble() %>%
+  rename(filelocation = value)
+
+#Add on shorter filename for ease of processing, extract company number
+accounts <- accounts %>% 
+      mutate(
+        value = basename(filelocation),#pull out just short final name
+        companynumber = str_split(value, "_", simplify = TRUE)[, 3]
+      ) %>% 
+  select(-value)
+
+
+#OK, check if any accounts matches this month in SY - yes, 4841
+table(accounts$companynumber %in% ch.geo$CompanyNumber)
+
+#Yes - let's just view those
+# ch.geo %>% filter(CompanyNumber %in% accounts$companynumber) %>% View
+
+#Extract employee numbers from accounts files
+employee.numbers <- map(accounts$filelocation[accounts$companynumber %in% ch.geo$CompanyNumber],get_accounts_employeenumber, .progress = T) %>% bind_rows
+
+#Add back in company numbers
+employee.numbers$companynumber <- accounts$companynumber[accounts$companynumber %in% ch.geo$CompanyNumber]
+
+#Check what proportion of firms we got employees for here... 99%, bonza
+table(!is.na(employee.numbers$Employees_thisyear[employee.numbers$dormantstatus=='false'])) %>% prop.table
+
+employee.numbers %>% filter(dormantstatus == 'false') %>% View
+
+#Note: ENTRY MISTAKES E.G. THE TOP LISTED EMPLOYEE COUNT IS ACTUALLY THE INCOME - 147K.
+#Watch out for those.
 
 
 
