@@ -3,6 +3,7 @@
 #https://www.gov.uk/guidance/companies-house-data-products
 library(tidyverse)
 library(sf)
+library(tmap)
 library(pryr)
 library(xml2)
 source('functions.R')
@@ -446,6 +447,9 @@ for(i in 1:length(zip_links)){
 
 #So I can get on with playing with it. Mull deeper / further processing as we go
 
+#Everage of 20 mins per file, largest december one took an hour
+#Doing directly from zip muuuuch slower, don't repeat for national processing!
+
 #Get all zip file locations
 #Run each
 #Extract then save, can combine after running
@@ -488,15 +492,196 @@ for(zipname in allzips){
 
 }
 
-#bind later, save for now!
-# saveRDS(results)
+
+
+#Reload, compile into one
+employee.numbers.all <- map(list.files(path = 'localdata/SouthYorkshire_accounts_saves', pattern = '*.rds', full.names = T), readRDS) %>% bind_rows()
+
+#NOTE: companies that do have more than one year's accounts picked up here e.g. gripple, we've got the beginnings of an employee count time series there. Can report this as exactly what it is "companies most recent and last year employee count from accounts submitted to CH".
+#Number this is possible for may not be very high, but it's doable for a proportion
+
+#51969 rows
+#How many unique company numbers? 46138
+length(unique(employee.numbers.all$companynumber))
+
+#That's a lot of businesses not submitting electronic accounts in the last year
+#Still, that's -->
+#60% of firms, so that's starting to look more like the FAME numbers (though that's 50% so slight improvement)
+(length(unique(employee.numbers.all$companynumber)) / nrow(ch.geo)) * 100
+
+#Let's try and get those random dates all parsed
+#test which does the better job... tick!
+# lubridate::parse_date_time(employee.numbers$enddate, orders = c("dmy","ymd"))
+
+employee.numbers.all <- employee.numbers.all %>% 
+  mutate(
+    enddate_formatted = lubridate::parse_date_time(enddate, orders = c("dmy","ymd"))
+  ) 
+
+#Got every single date
+table(is.na(employee.numbers.all$enddate_formatted))
+
+#Check employee number counts
+#Keep only non dormant firms for this
+nond <- employee.numbers.all %>% filter(dormantstatus == 'false')
+
+table(is.na(nond$Employees_thisyear))
+table(is.na(nond$Employees_lastyear))
+
+#And both, just to check... 35K firms with records for this and last year for employee counts
+table(!is.na(nond$Employees_lastyear) & !is.na(nond$Employees_thisyear))
+
+#When are accounts mostly submitted?
+
+#https://stackoverflow.com/a/66583089/5023561
+by_month <- function(x,n=1){
+  seq(min(x,na.rm=T),max(x,na.rm=T),by=paste0(n," months"))
+}
+
+ggplot(nond,aes(x = enddate_formatted)) +
+  geom_histogram(breaks = by_month(nond$enddate_formatted))
 
 
 
+#OK, let's just do a fun check on this data. Looking JUST at active firms with records for employees for the last pair of years
+#(Noting that due to dates of accounting submission, those pair of years won't perfectly line up)
+
+#Just confirm how many matches there are from the employee data we want to use... ALL of them. Nice.
+table(nond$companynumber[!is.na(nond$Employees_lastyear) & !is.na(nond$Employees_thisyear)] %in% ch.geo$CompanyNumber)
+
+#Join with geo-data
+ch.geo.twoyears <- ch.geo %>% 
+  right_join(
+    nond %>% filter(!is.na(Employees_lastyear) & !is.na(Employees_thisyear)),
+    by = c('CompanyNumber' = 'companynumber')
+  )
+
+#Sanity check - business names are the same??
+#Tick - formatting from the actual accounts is a bit nicer
+ch.geo.twoyears %>% select(CompanyName,Company) %>% View
 
 
 
+#So, initial question:
+#IS THERE ANY SOUTH YORKSHIRE GEOGRAPHY TO PLACES WHERE BUSINESS EMPLOYMENT IS GROWING VS NOT?
+#Probably filtering to firms over a certain size.
 
+#Let's filter a few other things out
+#1. Some firms put financials into the employee box, wrong data
+#Well maybe only one
+ch.geo.twoyears <- ch.geo.twoyears %>% filter(Employees_thisyear < 10000)
+
+#Some have zeroes - fine, those are likely new firms. But no good for us with this test.
+table(ch.geo.twoyears$Employees_thisyear == 0)
+table(ch.geo.twoyears$Employees_lastyear == 0)
+#So those are mostly firms with zero in both... can come back and mull who those are
+table(ch.geo.twoyears$Employees_lastyear == 0 & ch.geo.twoyears$Employees_thisyear == 0)
+
+#27000 firms left now
+ch.geo.twoyears <- ch.geo.twoyears %>% 
+  filter(
+    Employees_thisyear != 0,
+    Employees_lastyear != 0
+    )
+
+#Wow - orbital umbrella (Barnsley payroll company) dropped employee numbers by a quarter (about 1000 to about 750)
+#But what does that mean? Are they still on contract...? Can't find news on it
+#Would be good to check against financials change.
+
+#First, what's a quick way to get a sense of the overall pattern of change across all SY companies?
+#Just plot the diff range...
+ch.geo.twoyears <- ch.geo.twoyears %>% 
+  mutate(
+    employee_diff_percent = ((Employees_thisyear - Employees_lastyear)/Employees_lastyear) * 100
+  )
+
+#View to check, cols a bit confused now
+View(ch.geo.twoyears %>% select(Company,Employees_thisyear,Employees_lastyear,employee_diff_percent))
+
+
+#Let's do diff range broken down by sector type, for which we need...
+#Just using the main sector for now before seeing what can be squeezed from the others
+
+#NOTE: Quick test of how many sectors (up to four) firms label themselves with
+#Sequentially filled in, 1 then 2 then 3 then 4, if filled in, so...
+#100% with a single sector filled in and:
+table(!is.na(ch.geo.twoyears$SICCode.SicText_2)) %>% prop.table * 100#13.5% with two sectors
+table(!is.na(ch.geo.twoyears$SICCode.SicText_3)) %>% prop.table * 100#4.55% with three sectors
+table(!is.na(ch.geo.twoyears$SICCode.SicText_4)) %>% prop.table * 100#1.78% with four sectors
+
+#Label that and check correlation with firm size - do larger firms put in more SICs?
+ch.geo.twoyears <- ch.geo.twoyears %>% 
+  mutate(
+    no_siclabels = case_when(
+      !is.na(ch.geo.twoyears$SICCode.SicText_4) ~ 4,
+      !is.na(ch.geo.twoyears$SICCode.SicText_3) ~ 3,
+      !is.na(ch.geo.twoyears$SICCode.SicText_2) ~ 2,
+      .default = 1
+    )
+  )  
+
+# ggplot(ch.geo.twoyears, aes(x = Employees_thisyear, fill = factor(no_siclabels))) +
+#   geom_density(alpha=0.5) +
+#   coord_cartesian(xlim = c(0,30))
+# 
+# ggplot(ch.geo.twoyears, aes(y = Employees_thisyear, x = factor(no_siclabels))) +
+#   geom_boxplot() 
+
+# summary(lm(data = ch.geo.twoyears, formula = log(Employees_thisyear) ~ factor(no_siclabels)))
+
+
+#Anyway! Let's attach SIC codes (just for the main 5 digit for now)
+ch.geo.twoyears <- ch.geo.twoyears %>% 
+  mutate(
+    SIC_5DIGIT_CODE = substr(SICCode.SicText_1,1,5)
+  ) %>% 
+  left_join(
+    read_csv('https://github.com/DanOlner/ukcompare/raw/master/data/SIClookup.csv'),
+    by = 'SIC_5DIGIT_CODE'
+  )
+
+
+#OK, check employee number diff change - filter for 10+employees in most recent year
+#Actually better to filter on LAST year (there are a lot of healthcare / care homes that had e.g. 1 employee last year and apparently 64 this year...)
+
+#Select view and get group means and add over top
+chforplot <- ch.geo.twoyears %>% filter(Employees_lastyear > 9, !grepl('households|extraterrit',SIC_SECTION_NAME, ignore.case = T), !is.na(SIC_SECTION_NAME))
+
+section_diff_means <- chforplot %>% 
+  st_set_geometry(NULL) %>% 
+  group_by(SIC_SECTION_NAME) %>% 
+  summarise(mean_diff_percent = mean(employee_diff_percent))
+
+ggplot() +
+  geom_jitter(data = chforplot, aes(y = employee_diff_percent, x = fct_reorder(SIC_SECTION_NAME, employee_diff_percent, .fun = mean)),
+    alpha = 0.25, width = 0.25) +
+  geom_hline(yintercept = 0) +
+  coord_flip(ylim = c(-100,100)) 
+  # geom_point(data = section_diff_means, aes(y = mean_diff_percent, x = fct_reorder(SIC_SECTION_NAME, section_diff_means)))
+  
+
+
+#Let's start mulling if there's any geography
+#Think I want to aggregate diffs to a grid square (for places with enough firms, grey out the rest)
+#But let's just do some eyeballing first
+
+#That last plot shows there's a pretty even distribution
+#But picking on section name...
+sy <- st_read('localdata/QGIS/sy_localauthorityboundaries.shp')
+
+#Check points against map...
+tmap_mode('view')
+
+tm_shape(sy) +
+  tm_borders() +
+  tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Manufacturing")) +
+  tm_dots(col = 'employee_diff_percent', border.alpha = 0.1, size = 0.05, style = 'fisher')
+
+#Hmm. Employee counts seem to have distinct places too
+tm_shape(sy) +
+  tm_borders() +
+  tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear < 50, SIC_SECTION_NAME == "Manufacturing")) +
+  tm_dots(col = 'Employees_lastyear', size = 0.05, style = 'fisher')
 
 
 
