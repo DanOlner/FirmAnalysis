@@ -640,6 +640,15 @@ ch.geo.twoyears <- ch.geo.twoyears %>%
     by = 'SIC_5DIGIT_CODE'
   )
 
+#Basics: employee number per SIC section
+ch.geo.twoyears %>% 
+  st_set_geometry(NULL) %>% 
+  group_by(SIC_SECTION_NAME) %>% 
+  summarise(employees = sum(Employees_thisyear)) %>% 
+  arrange(-employees) %>% 
+  print(n=25)
+
+
 
 #OK, check employee number diff change - filter for 10+employees in most recent year
 #Actually better to filter on LAST year (there are a lot of healthcare / care homes that had e.g. 1 employee last year and apparently 64 this year...)
@@ -659,6 +668,15 @@ ggplot() +
   coord_flip(ylim = c(-100,100)) 
   # geom_point(data = section_diff_means, aes(y = mean_diff_percent, x = fct_reorder(SIC_SECTION_NAME, section_diff_means)))
   
+#Check on performing arts related sectors...
+arts <- (ch.geo.twoyears %>% filter(SIC_SECTION_NAME == "Arts, entertainment and recreation"))
+View(arts)
+unique(arts$SIC_5DIGIT_NAME)
+unique(arts$SIC_2DIGIT_NAME)
+
+ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities") %>% View
+
+#And also pubs etc
 
 
 #Let's start mulling if there's any geography
@@ -674,14 +692,23 @@ tmap_mode('view')
 
 tm_shape(sy) +
   tm_borders() +
-  tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Manufacturing")) +
-  tm_dots(col = 'employee_diff_percent', border.alpha = 0.1, size = 0.05, style = 'fisher')
+  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Manufacturing")) +
+  tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Information and communication")) +
+  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Construction")) +
+  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Human health and social work activities")) +
+  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Arts, entertainment and recreation")) +
+  # tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
+  # tm_shape(ch.geo.twoyears %>% filter(SIC_3DIGIT_NAME == "563 : Beverage serving activities")) +
+  tm_dots(col = 'employee_diff_percent', border.alpha = 0.1, size = 'Employees_thisyear', style = 'fisher', scale = 1)
 
 #Hmm. Employee counts seem to have distinct places too
 tm_shape(sy) +
   tm_borders() +
   tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear < 50, SIC_SECTION_NAME == "Manufacturing")) +
-  tm_dots(col = 'Employees_lastyear', size = 0.05, style = 'fisher')
+  # tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
+  tm_dots(col = 'Employees_thisyear', size = 'Employees_thisyear', style = 'fisher')
+
+
 
 
 
