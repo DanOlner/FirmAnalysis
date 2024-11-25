@@ -727,6 +727,10 @@ ch.geo.thisyear %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertain
 #376
 ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities") %>% nrow
 
+#Write for elsewhere
+write_csv(ch.geo.thisyear %>% st_set_geometry(NULL) %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities"), 
+          'localdata/creativeartsentertainmentSIC90.csv')
+
 #And also pubs etc
 
 
@@ -743,20 +747,20 @@ tmap_mode('view')
 
 tm_shape(sy) +
   tm_borders() +
-  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Manufacturing")) +
+  tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Manufacturing")) +
   # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Information and communication")) +
   # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Construction")) +
   # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Human health and social work activities")) +
   # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Arts, entertainment and recreation")) +
-  tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
+  # tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
   # tm_shape(ch.geo.twoyears %>% filter(SIC_3DIGIT_NAME == "563 : Beverage serving activities")) +
-  tm_dots(col = 'employee_diff_percent', border.alpha = 0.1, size = 'Employees_thisyear', style = 'fisher', scale = 1)
+  tm_dots(col = 'employee_diff_percent', border.alpha = 0.1, size = 'Employees_thisyear', style = 'fisher', scale = 2)
 
 #Hmm. Employee counts seem to have distinct places too
 tm_shape(sy) +
   tm_borders() +
-  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear < 50, SIC_SECTION_NAME == "Manufacturing")) +
-  tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
+  tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear < 50, SIC_SECTION_NAME == "Manufacturing")) +
+  # tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
   tm_dots(col = 'Employees_thisyear', size = 'Employees_thisyear', style = 'fisher')
 
 
