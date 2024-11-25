@@ -494,7 +494,12 @@ for(zipname in allzips){
 
 
 
-#Reload, compile into one
+
+
+
+# COMBINE / EXAMINE SOUTH YORKSHIRE EMPLOYEE NUMBER DATA----
+
+#Reload south Yorkshire employee data extracted from accounts files, compile into one
 employee.numbers.all <- map(list.files(path = 'localdata/SouthYorkshire_accounts_saves', pattern = '*.rds', full.names = T), readRDS) %>% bind_rows()
 
 #NOTE: companies that do have more than one year's accounts picked up here e.g. gripple, we've got the beginnings of an employee count time series there. Can report this as exactly what it is "companies most recent and last year employee count from accounts submitted to CH".
@@ -547,14 +552,33 @@ ggplot(nond,aes(x = enddate_formatted)) +
 #(Noting that due to dates of accounting submission, those pair of years won't perfectly line up)
 
 #Just confirm how many matches there are from the employee data we want to use... ALL of them. Nice.
+#35792
 table(nond$companynumber[!is.na(nond$Employees_lastyear) & !is.na(nond$Employees_thisyear)] %in% ch.geo$CompanyNumber)
 
-#Join with geo-data
+#That's for firms with employee data for both of the years we extracted from.
+#What about just for the most recent year?
+#All of them again, 42920
+table(nond$companynumber[!is.na(nond$Employees_thisyear)] %in% ch.geo$CompanyNumber)
+
+
+
+#TODO: neater way to examine firms with different employee / numbers / dates
+
+#Join with geo-data - all firms with employee data in most recent year...
+ch.geo.thisyear <- ch.geo %>% 
+  right_join(
+    nond %>% filter(!is.na(Employees_thisyear)),
+    by = c('CompanyNumber' = 'companynumber')
+  )
+
+#... and all firms with employee data for both years
 ch.geo.twoyears <- ch.geo %>% 
   right_join(
     nond %>% filter(!is.na(Employees_lastyear) & !is.na(Employees_thisyear)),
     by = c('CompanyNumber' = 'companynumber')
   )
+
+
 
 #Sanity check - business names are the same??
 #Tick - formatting from the actual accounts is a bit nicer
@@ -583,6 +607,17 @@ ch.geo.twoyears <- ch.geo.twoyears %>%
     Employees_thisyear != 0,
     Employees_lastyear != 0
     )
+
+
+#... and for all firms with employee data in latest year...
+#Dropped to 33353 from 42920
+ch.geo.thisyear <- ch.geo.thisyear %>% 
+  filter(
+    Employees_thisyear != 0
+  )
+
+
+
 
 #Wow - orbital umbrella (Barnsley payroll company) dropped employee numbers by a quarter (about 1000 to about 750)
 #But what does that mean? Are they still on contract...? Can't find news on it
@@ -640,6 +675,15 @@ ch.geo.twoyears <- ch.geo.twoyears %>%
     by = 'SIC_5DIGIT_CODE'
   )
 
+ch.geo.thisyear <- ch.geo.thisyear %>% 
+  mutate(
+    SIC_5DIGIT_CODE = substr(SICCode.SicText_1,1,5)
+  ) %>% 
+  left_join(
+    read_csv('https://github.com/DanOlner/ukcompare/raw/master/data/SIClookup.csv'),
+    by = 'SIC_5DIGIT_CODE'
+  )
+
 #Basics: employee number per SIC section
 ch.geo.twoyears %>% 
   st_set_geometry(NULL) %>% 
@@ -668,13 +712,20 @@ ggplot() +
   coord_flip(ylim = c(-100,100)) 
   # geom_point(data = section_diff_means, aes(y = mean_diff_percent, x = fct_reorder(SIC_SECTION_NAME, section_diff_means)))
   
-#Check on performing arts related sectors...
-arts <- (ch.geo.twoyears %>% filter(SIC_SECTION_NAME == "Arts, entertainment and recreation"))
+
+
+
+#Check on performing arts related sectors... using any with employees in latest year
+arts <- (ch.geo.thisyear %>% filter(SIC_SECTION_NAME == "Arts, entertainment and recreation"))
 View(arts)
 unique(arts$SIC_5DIGIT_NAME)
 unique(arts$SIC_2DIGIT_NAME)
 
-ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities") %>% View
+#Compare - how many firms getting from each of these? Not huge diff...
+#418
+ch.geo.thisyear %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities") %>% nrow
+#376
+ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities") %>% nrow
 
 #And also pubs etc
 
@@ -693,20 +744,30 @@ tmap_mode('view')
 tm_shape(sy) +
   tm_borders() +
   # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Manufacturing")) +
-  tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Information and communication")) +
+  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Information and communication")) +
   # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Construction")) +
   # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Human health and social work activities")) +
   # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Arts, entertainment and recreation")) +
-  # tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
+  tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
   # tm_shape(ch.geo.twoyears %>% filter(SIC_3DIGIT_NAME == "563 : Beverage serving activities")) +
   tm_dots(col = 'employee_diff_percent', border.alpha = 0.1, size = 'Employees_thisyear', style = 'fisher', scale = 1)
 
 #Hmm. Employee counts seem to have distinct places too
 tm_shape(sy) +
   tm_borders() +
-  tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear < 50, SIC_SECTION_NAME == "Manufacturing")) +
-  # tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
+  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear < 50, SIC_SECTION_NAME == "Manufacturing")) +
+  tm_shape(ch.geo.twoyears %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
   tm_dots(col = 'Employees_thisyear', size = 'Employees_thisyear', style = 'fisher')
+
+
+
+#Version to view employees with counts in most recent year only
+#Hmm. Employee counts seem to have distinct places too
+tm_shape(sy) +
+  tm_borders() +
+  # tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear < 50, SIC_SECTION_NAME == "Manufacturing")) +
+  tm_shape(ch.geo.thisyear %>% filter(SIC_2DIGIT_NAME == "90 : Creative, arts and entertainment activities")) +
+  tm_dots(col = 'Employees_thisyear', size = 'Employees_thisyear', style = 'fisher', scale = 2)
 
 
 

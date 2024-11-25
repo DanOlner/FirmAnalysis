@@ -326,8 +326,8 @@ autoplot(
 #Note, it's not symmeterical, which I would have thought it would be...
 #But no, it comparing to whole area?
 
-#Test with even weights 
-pp$marks$PointWeight <- 1
+#Test with even weights
+# pp$marks$PointWeight <- 1
 
 x <- Sys.time()
 
