@@ -745,6 +745,9 @@ sy <- st_read('localdata/QGIS/sy_localauthorityboundaries.shp')
 #Check points against map...
 tmap_mode('view')
 
+ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Manufacturing") %>% nrow
+ch.geo.thisyear %>% filter(SIC_SECTION_NAME == "Manufacturing") %>% nrow
+
 tm_shape(sy) +
   tm_borders() +
   tm_shape(ch.geo.twoyears %>% filter(Employees_lastyear > 9, SIC_SECTION_NAME == "Manufacturing")) +
@@ -845,6 +848,63 @@ all_details <- all_details[!is.na(all_names)]
 print(all_details)
 
 all_details[grepl('profit',all_details,ignore.case = T)]
+
+
+
+
+
+# COMBINE SOUTH YORKSHIRE DATA AGAIN FOR SHINY APP----
+
+#Shiny in separate project currently SYMCA_shiny
+
+#Same as above - get current employee counts, join to CH data, join SIC lookup
+#But keep all
+employee.numbers.all <- map(list.files(path = 'localdata/SouthYorkshire_accounts_saves', pattern = '*.rds', full.names = T), readRDS) %>% bind_rows() %>% filter(dormantstatus == 'false')
+
+
+#Join employee number to CH data, will filter us down to SY at this point via employee number
+ch.geo.sy <- ch.geo %>% 
+  right_join(
+    employee.numbers.all,
+    by = c('CompanyNumber' = 'companynumber')
+  ) %>% 
+  select(-dormantstatus)
+
+#Join SIC lookup
+ch.geo.sy <- ch.geo.sy %>% 
+  mutate(
+    SIC_5DIGIT_CODE = substr(SICCode.SicText_1,1,5)
+  ) %>% 
+  left_join(
+    read_csv('https://github.com/DanOlner/ukcompare/raw/master/data/SIClookup.csv'),
+    by = 'SIC_5DIGIT_CODE'
+  ) %>% 
+  relocate(SIC_5DIGIT_NAME, .after = SIC_5DIGIT_CODE) %>% 
+  relocate(SIC_2DIGIT_CODE_NUMERIC, .after = SIC_2DIGIT_CODE)
+
+#reminder, how many have employee count in the latest account year?
+table(!is.na(ch.geo.sy$Employees_thisyear)) %>% prop.table()
+
+#98.6% with employees at least this year. Let's just keep those.
+ch.geo.sy <- ch.geo.sy %>% 
+  filter(!is.na(Employees_thisyear))
+
+#30mb in memory
+pryr::object_size(ch.geo.sy)
+
+#SAVE DIRECTLY TO SHINY DATA FOLDER
+saveRDS(ch.geo.sy,"../SYMCA_shiny/data/companieshouse_employees_n_sectors_southyorkshire.rds")
+
+
+
+
+
+
+
+
+
+
+
 
 
 
