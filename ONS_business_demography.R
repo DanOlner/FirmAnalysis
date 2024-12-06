@@ -6,6 +6,8 @@ library(sf)
 library(tmap)
 library(zoo)
 library(nomisr)
+library(patchwork)
+library(FRACTION)
 # library(stringdist)
 
 #USE ENTERPRISE BIRTHS TO FIGURE OUT HOW TO HARMONISE LOCAL AUTHORITY GEOGRAPHIES FROM 2017 TO 2022----
@@ -493,6 +495,9 @@ d <- d %>% purrr::map(
 #Save
 saveRDS(d,'data/businessdemog.rds')
 
+#reload
+d <- readRDS('data/businessdemog.rds')
+
 
 ## Examine high growth firm raw numbers----
 
@@ -632,6 +637,7 @@ ggplot(
   scale_color_brewer(palette = 'Paired') +
   scale_y_log10() +
   scale_x_log10() 
+  # geom_abline(intercept = 0, slope = 1)
 
 
 
@@ -676,6 +682,14 @@ bd <- d$births %>%
 #Aggregate to MCAs and find firm growth efficiency for those summed numbers
 #Then there's turnover, which can measure scale where efficiency can't
 #To give a sense of the level of creative destruction
+
+#Adding in ratio of births to deaths - doesn't that give us just as good info as firm efficiency and be more legible?
+#Has issue of scale but can log it?
+#E.g. 2 to 1 births / deaths = 2, 1 to 2 births / deaths = 0.5
+#Can then map onto plot for scale, which I did somewhere in the rotterdam project...
+
+
+
 bd.mca <- bd %>%
   filter(!is.na(CAUTH24NM)) %>% 
   group_by(CAUTH24NM,year) %>%
@@ -688,6 +702,8 @@ bd.mca <- bd %>%
   ungroup() %>% 
   mutate(
     firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+    birthdeath_ratio = count_births / count_deaths,
+    birthdeath_ratio_log = log(count_births / count_deaths),
     turnover = (count_births + count_deaths)/(count_active),
     births_over_active_percent = ((count_births)/(count_active))*100,
     deaths_over_active_percent = ((count_deaths)/(count_active))*100
@@ -695,6 +711,8 @@ bd.mca <- bd %>%
   group_by(MCA) %>% 
   mutate(
     firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+    birthdeath_ratio_movingav = rollapply(birthdeath_ratio, 3, mean, align = 'center', fill = NA),
+    birthdeath_ratio_log_movingav = rollapply(birthdeath_ratio_log, 3, mean, align = 'center', fill = NA),
     turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
     births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
     deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
@@ -766,18 +784,56 @@ ggplot(bd.mca, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(MC
   geom_hline(yintercept = 0) +
   coord_cartesian(xlim = c(2018,2021))
 
+#Guessing log birth death ratio loooks the same... snap
+ggplot(bd.mca, aes(x = year, y = birthdeath_ratio_log_movingav, colour = fct_reorder(MCA,-firmefficency_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(xlim = c(2018,2021))
+
 #Plot turnover values for MCAs 
 ggplot(bd.mca, aes(x = year, y = turnover, colour = fct_reorder(MCA,-turnover))) +
   geom_line() +
   geom_point(size = 2) +
   scale_color_brewer(palette = 'Paired') 
 
-ggplot(bd.mca, aes(x = year, y = turnover_movingav, colour = fct_reorder(MCA,-turnover_movingav))) +
+turnover_mca <- ggplot(bd.mca, aes(x = year, y = turnover_movingav, colour = fct_reorder(MCA,-turnover_movingav))) +
   geom_line() +
   geom_point(size = 2) +
   scale_color_brewer(palette = 'Paired') +
-  coord_cartesian(xlim = c(2018,2021))
+  labs(colour = "MCA") +
+  ylab("Turnover (3 year moving average") +
+  coord_cartesian(xlim = c(2018,2021))+
+  ggtitle("TURNOVER (BIRTHS + DEATHS, DIVIDED BY ACTIVE FIRMS)\nMCAS")
 
+
+
+
+
+#Guessing log birth death ratio loooks the same... snap. Just needs better labelled to map log values to ratios
+
+#Map some ratio values to these logs to make more readable
+#Just testing some log values we can see against what their ratios would be...
+#TODO: go back to Rotterdam work to find better way I did this
+#Hacky for now
+exp(0.1)
+exp(0.2)
+
+#Might do this through manual annealing!
+6/5 #1.2, close to log of 0.2
+10/9 #1.1111, close to log of 0.1
+
+mca_ratios <- ggplot(bd.mca, aes(x = year, y = birthdeath_ratio_log_movingav, colour = fct_reorder(MCA,-firmefficency_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(xlim = c(2018,2021)) +
+  scale_y_continuous(breaks = c(log(6/5),log(10/9)), labels = c("6 births / 5 deaths", "10 births / 9 deaths")) +
+  labs(colour = "MCA") +
+  ylab("ratio of births to deaths (above black line = more births than deaths)") +
+  ggtitle("RATIO OF BIRTHS TO DEATHS, MCAS")
 
 
 
@@ -852,6 +908,8 @@ bd.core <- bd %>%
   filter(!grepl('cardiff|belfast',region,ignore.case=T)) %>% 
   mutate(
     firmefficency = (count_births - count_deaths)/(count_births + count_deaths) * 100,#diffs here quite small so scale to 100
+    birthdeath_ratio = count_births / count_deaths,
+    birthdeath_ratio_log = log(count_births / count_deaths),
     turnover = (count_births + count_deaths)/(count_active),
     births_over_active_percent = ((count_births)/(count_active))*100,
     deaths_over_active_percent = ((count_deaths)/(count_active))*100
@@ -862,19 +920,71 @@ bd.core <- bd %>%
     highgrowth_movingav = rollapply(count_highgrowth, 3, mean, align = 'center', fill = NA),
     #derived measures
     firmefficency_movingav = rollapply(firmefficency, 3, mean, align = 'center', fill = NA),
+    birthdeath_ratio_movingav = rollapply(birthdeath_ratio, 3, mean, align = 'center', fill = NA),
+    birthdeath_ratio_log_movingav = rollapply(birthdeath_ratio_log, 3, mean, align = 'center', fill = NA),
     turnover_movingav = rollapply(turnover, 3, mean, align = 'center', fill = NA),
     births_over_active_percent_movingav = rollapply(births_over_active_percent, 3, mean, align = 'center', fill = NA),
     deaths_over_active_percent_movingav = rollapply(deaths_over_active_percent, 3, mean, align = 'center', fill = NA)
   ) %>% 
   ungroup()
 
+
+
+
+#TURNOVER (MOVIN AV)
+turnover_core <- ggplot(bd.core, aes(x = year, y = turnover_movingav, colour = fct_reorder(region,-turnover_movingav))) +
+# turnover_core <- ggplot(bd.core, aes(x = year, y = turnover, colour = fct_reorder(region,-turnover))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  # geom_hline(yintercept = 0) +
+  # coord_cartesian(xlim = c(2018,2021), ylim = c(0.2,0.35)) +
+  coord_cartesian(xlim = c(2018,2021)) +
+  ylab("Turnover (3 year moving average") +
+  ggtitle("TURNOVER (BIRTHS + DEATHS / ACTIVE FIRMS)\nCORE CITIES PLUS BARNSLEY, DONCASTER, ROTHERHAM") +
+  labs(colour = 'Core city')
+
+turnover_mca + turnover_core
+
+
+
+
+
+
+#FIRM EFFIC
 ggplot(bd.core, aes(x = year, y = firmefficency_movingav, colour = fct_reorder(region,-firmefficency_movingav))) +
   geom_line() +
   geom_point(size = 2) +
   scale_color_brewer(palette = 'Paired') +
   geom_hline(yintercept = 0) +
   coord_cartesian(xlim = c(2018,2021)) +
-  labs(colour = 'Core city')
+  labs(colour = 'Core city') 
+
+
+
+#More labels!
+exp(0.33)
+4/3
+
+
+#Ratio births to deaths better....
+core_ratios <- ggplot(bd.core, aes(x = year, y = birthdeath_ratio_log_movingav, colour = fct_reorder(region,-firmefficency_movingav))) +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_color_brewer(palette = 'Paired') +
+  geom_hline(yintercept = 0) +
+  coord_cartesian(xlim = c(2018,2021)) +
+  scale_y_continuous(breaks = c(log(6/5),log(10/9),log(4/3)), labels = c("6 births / 5 deaths", "10 births / 9 deaths","4 births / 3 deaths")) +
+  ylab("ratio of births to deaths (above black line = more births than deaths)") +
+  labs(colour = "Core city + BDR") +
+  ggtitle("RATIO OF BIRTHS TO DEATHS, CORE CITIES PLUS BARNSLEY, DONCASTER, ROTHERHAM")
+
+
+#Combine into one plot with MCA one
+mca_ratios + core_ratios
+
+
+
 
 ggplot(bd.core, aes(x = year, y = births_over_active_percent_movingav, colour = fct_reorder(region,-births_over_active_percent_movingav))) +
   geom_line() +
@@ -1381,7 +1491,16 @@ tm_shape(bd.la.eff.geo) +
 
 
 
+#Quick questions----
 
+#4 places prop of active firms across SY, prop of high growth?
+#core.hg.prop will do for 10+ firms
+
+fourplaces.hg.prop <- core.hg.prop %>% filter(region %in% c('Barnsley',"Doncaster","Rotherham","Sheffield"))
+
+prop.table(fourplaces.hg.prop %>% filter(year==2021) %>% select(count_active10plus_movingav) %>% pull)
+prop.table(fourplaces.hg.prop %>% filter(year==2021) %>% select(count_highgrowth_movingav) %>% pull)
+prop.table(fourplaces.hg.prop %>% filter(year==2021) %>% select(highgrowthfirms_aspercentof_firms10plusemployees_movingav) %>% pull)
 
 
 
